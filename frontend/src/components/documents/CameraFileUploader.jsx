@@ -190,14 +190,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   // ── Camera View ─────────────────────────────────────────────────────────────
   if (mode === 'camera') {
     return (
-      <div className="rounded-xl overflow-hidden bg-black relative" style={{ aspectRatio: '4/3' }}>
+      <div className="fixed inset-0 md:fixed md:inset-auto md:rounded-xl md:overflow-hidden bg-black relative md:relative md:max-w-lg md:mx-auto md:mt-4" style={{ aspectRatio: 'auto' }}>
         <video
           id="jphrc-cfu-video"
           ref={videoRefCallback}
           autoPlay playsInline muted
           onLoadedMetadata={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
           onCanPlay={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover md:object-cover"
           style={{ display: 'block' }}
         />
 
@@ -222,7 +222,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           </div>
         )}
 
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 px-4">
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 px-4 md:bottom-4 md:px-4 md:gap-4">
           <Button variant="danger" type="button" onClick={stopCamera} disabled={capturing || compressing}>
             {(isLegacySingle || single) ? 'Cancel' : `Done (${files.length})`}
           </Button>
