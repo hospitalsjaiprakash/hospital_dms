@@ -73,9 +73,8 @@ const generateToken = (userId, role) => {
  * PCC: own only | HOD: own + PCC | Admin: all
  */
 const canModifyDocument = (requestingUser, documentUploadedBy, documentUploaderRole) => {
-  if (requestingUser.role === 'admin') return true;
+  if (requestingUser.role === 'admin' || requestingUser.role === 'hod') return true;
   if (requestingUser.id === documentUploadedBy) return true;
-  if (requestingUser.role === 'hod' && documentUploaderRole === 'pcc') return true;
   return false;
 };
 

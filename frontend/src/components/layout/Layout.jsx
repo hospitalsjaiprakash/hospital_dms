@@ -3,14 +3,17 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, Users, FileText, LogOut, Menu, X,
-  ChevronRight, ClipboardList, Shield, Hospital, Bell
+  ChevronRight, ClipboardList, Shield, Hospital
 } from 'lucide-react';
 import clsx from 'clsx';
+import logo from '../../assets/logo.png';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'hod', 'pcc'] },
   { to: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'hod', 'pcc'] },
-  { to: '/users', icon: Shield, label: 'User Management', roles: ['admin'] },
+  { to: '/documents', icon: FileText, label: 'Documents', roles: ['admin', 'hod', 'pcc'] },
+  { to: '/users', icon: Shield, label: 'Users', roles: ['admin'] },
+  { to: '/my-activity', icon: ClipboardList, label: 'My Activity', roles: ['hod', 'pcc'] },
   { to: '/audit-logs', icon: ClipboardList, label: 'Audit Logs', roles: ['admin', 'hod'] },
 ];
 
@@ -30,46 +33,44 @@ export default function Layout() {
     navigate('/login');
   };
 
+  const visibleNavItems = navItems.filter((item) => item.roles.includes(user?.role));
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-blue-700">
-        <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0">
-          <Hospital className="w-5 h-5 text-blue-700" />
-        </div>
+        <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-contain flex-shrink-0" />
         <div className="min-w-0">
-          <h1 className="text-white font-bold text-sm leading-tight">Hospital DMS</h1>
-          <p className="text-blue-200 text-xs truncate">Document Management</p>
+          <h1 className="text-white font-bold text-base leading-tight uppercase tracking-widest">JPHRC</h1>
+          <p className="text-blue-200 text-[10px] uppercase tracking-widest mt-0.5">ROURKELA</p>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems
-          .filter((item) => item.roles.includes(user?.role))
-          .map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group',
-                  isActive
-                    ? 'bg-white text-blue-700 shadow-sm'
-                    : 'text-blue-100 hover:bg-blue-700 hover:text-white'
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon className={clsx('w-4.5 h-4.5 flex-shrink-0', isActive ? 'text-blue-700' : 'text-blue-200 group-hover:text-white')} size={18} />
-                  <span>{item.label}</span>
-                  {isActive && <ChevronRight className="ml-auto w-4 h-4 text-blue-400" />}
-                </>
-              )}
-            </NavLink>
-          ))}
+        {visibleNavItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={() => setSidebarOpen(false)}
+            className={({ isActive }) =>
+              clsx(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group',
+                isActive
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-blue-100 hover:bg-blue-700 hover:text-white'
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <item.icon className={clsx('flex-shrink-0', isActive ? 'text-blue-700' : 'text-blue-200 group-hover:text-white')} size={18} />
+                <span>{item.label}</span>
+                {isActive && <ChevronRight className="ml-auto w-4 h-4 text-blue-400" />}
+              </>
+            )}
+          </NavLink>
+        ))}
       </nav>
 
       {/* User Info */}
@@ -103,11 +104,11 @@ export default function Layout() {
         <SidebarContent />
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile/Tablet Sidebar Overlay */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="fixed inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <aside className="relative w-64 bg-blue-800 flex flex-col z-10 animate-slide-up">
+          <aside className="relative w-64 max-w-[80vw] bg-blue-800 flex flex-col z-10 shadow-2xl">
             <button
               onClick={() => setSidebarOpen(false)}
               className="absolute top-4 right-4 p-1.5 rounded-md text-blue-200 hover:text-white hover:bg-blue-700"
@@ -121,26 +122,68 @@ export default function Layout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Bar (mobile) */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 flex-shrink-0">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <Menu size={20} className="text-gray-600" />
-          </button>
+        {/* Top Bar (mobile/tablet) */}
+        <header className="lg:hidden flex items-center justify-between gap-3 px-4 py-3 bg-white border-b border-gray-200 flex-shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="Open menu"
+            >
+              <Menu size={20} className="text-gray-600" />
+            </button>
+            <div className="flex items-center gap-2">
+              <img src={logo} alt="Logo" className="w-8 h-8 rounded-full object-contain" />
+              <div className="min-w-0">
+                <h1 className="font-bold text-gray-800 text-sm leading-tight uppercase tracking-widest">JPHRC</h1>
+                <p className="text-gray-500 text-[8px] uppercase tracking-widest">ROURKELA</p>
+              </div>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <Hospital className="w-5 h-5 text-blue-700" />
-            <span className="font-bold text-gray-800 text-sm">Hospital DMS</span>
+            <span className={clsx('text-xs px-2 py-0.5 rounded-full font-semibold uppercase', roleColors[user?.role])}>
+              {user?.role}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Logout"
+            >
+              <LogOut size={17} />
+            </button>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto p-4 lg:p-6 animate-fade-in">
+{/* Page Content */}
+        <main className="flex-1 overflow-y-auto pb-20 lg:pb-0 bg-gray-50">
+          <div className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 animate-fade-in">
             <Outlet />
           </div>
         </main>
+
+        {/* Bottom Nav Bar (mobile/tablet only) */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex">
+          {visibleNavItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                clsx(
+                  'flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs font-medium transition-colors',
+                  isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <item.icon size={20} className={clsx('transition-colors', isActive ? 'text-blue-600' : 'text-gray-400')} />
+                  <span className="text-[10px] leading-tight">{item.label}</span>
+                  {isActive && <span className="w-1 h-1 bg-blue-600 rounded-full mt-0.5" />}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
       </div>
     </div>
   );

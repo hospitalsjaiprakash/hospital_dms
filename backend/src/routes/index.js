@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 const { validate, schemas } = require('../middleware/validate.middleware');
 
@@ -12,14 +13,21 @@ const auditCtrl = require('../controllers/audit.controller');
 
 const router = express.Router();
 
-// Multer in-memory storage (max 5MB, then we compress/validate server-side)
+/**
+ * MULTER CONFIGURATION
+ * memoryStorage keeps the file in req.file.buffer so your controller
+ * can save it locally via the StorageService.
+ */
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Invalid file type. Only JPG, PNG, PDF allowed.'));
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPG, PNG, PDF allowed.'));
+    }
   },
 });
 
@@ -30,39 +38,56 @@ router.get('/auth/me', authenticate, authCtrl.getMe);
 
 // ── Patients ─────────────────────────────────────────────────────────────────
 router.get('/patients/stats', authenticate, patientCtrl.getPatientStats);
+router.get('/patients/upload-history', authenticate, patientCtrl.getUploadHistory);
 router.get('/patients', authenticate, patientCtrl.getPatients);
 router.post('/patients', authenticate, validate(schemas.createPatient), patientCtrl.createPatient);
 router.get('/patients/:id', authenticate, patientCtrl.getPatient);
 router.patch('/patients/:id', authenticate, validate(schemas.updatePatient), patientCtrl.updatePatient);
 
-// ── Documents ─────────────────────────────────────────────────────────────────
+// ── Documents ────────────────────────────────────────────────────────────────
+router.get('/documents', authenticate, documentCtrl.getAllDocuments);
 router.post(
   '/documents',
   authenticate,
-  upload.single('file'),
+  upload.single('file'), 
   validate(schemas.uploadDocument, 'body'),
   documentCtrl.uploadDocument
 );
+
 router.get('/patients/:patient_id/documents', authenticate, documentCtrl.getPatientDocuments);
-router.patch('/documents/:id', authenticate, validate(schemas.updateDocument), documentCtrl.updateDocument);
+router.get('/documents/:id', authenticate, documentCtrl.getDocument);
+router.patch(
+  '/documents/:id',
+  authenticate,
+  upload.single('file'),
+  validate(schemas.updateDocument, 'body'),
+  documentCtrl.updateDocument
+);
 router.delete('/documents/:id', authenticate, documentCtrl.deleteDocument);
 router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.exportPatientDocuments);
 
-// ── Users (Admin only) ────────────────────────────────────────────────────────
+// ── Users (Admin only) ──────────────────────────────────────────────────────
 router.get('/users', authenticate, authorize('admin'), userCtrl.getUsers);
 router.post('/users', authenticate, authorize('admin'), validate(schemas.createUser), userCtrl.createUser);
 router.patch('/users/:id/status', authenticate, authorize('admin'), userCtrl.toggleUserStatus);
-router.get('/staff-master', authenticate, authorize('admin'), userCtrl.getStaffMaster);
-router.post('/staff-master', authenticate, authorize('admin'), userCtrl.addToStaffMaster);
 
-// ── Audit Logs (Admin & HOD) ──────────────────────────────────────────────────
-router.get('/audit-logs', authenticate, authorize('admin', 'hod'), auditCtrl.getLogs);
+// ── Audit Logs (Admin & HOD) ────────────────────────────────────────────────
+router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc'), auditCtrl.getLogs);
 
-// ── Health ─────────────────────────────────────────────────────────────────────
+// ── Health Check ─────────────────────────────────────────────────────────────
 router.get('/health', async (req, res) => {
-  const { healthCheck } = require('../db');
-  const dbHealth = await healthCheck().catch(() => ({ status: 'unhealthy' }));
-  res.json({ status: 'ok', db: dbHealth, uptime: process.uptime(), timestamp: new Date().toISOString() });
+  try {
+    const { healthCheck } = require('../db');
+    const dbHealth = await healthCheck();
+    res.json({ 
+      status: 'ok', 
+      db: dbHealth, 
+      uptime: process.uptime(), 
+      timestamp: new Date().toISOString() 
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'unhealthy', error: err.message });
+  }
 });
 
 module.exports = router;

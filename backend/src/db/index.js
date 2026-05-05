@@ -1,23 +1,29 @@
 const { Pool } = require('pg');
 const logger = require('../utils/logger');
 
-const poolConfig = {
+const poolConfig = process.env.DATABASE_URL 
+? { 
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  }
+: {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'hospital_dms',
+  database: process.env.DB_NAME || 'hospital-dms',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
   min: parseInt(process.env.DB_POOL_MIN || '2'),
   max: parseInt(process.env.DB_POOL_MAX || '20'),
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  statement_timeout: 10000,
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 20000,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
 };
 
 const pool = new Pool(poolConfig);
 
 pool.on('connect', (client) => {
-  client.query('SET timezone = "UTC"');
+  client.query("SET timezone = 'UTC'");
 });
 
 pool.on('error', (err) => {

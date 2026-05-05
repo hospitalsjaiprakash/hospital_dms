@@ -3,7 +3,7 @@ const { sendSuccess, sendError, sendPaginated, getPaginationParams } = require('
 const { auditLog, ACTIONS } = require('../services/audit.service');
 
 const createPatient = async (req, res) => {
-  const { uhid, name, mobile, admission_date, notes } = req.body;
+  const { uhid, name, admission_date, notes } = req.body;
 
   // Check UHID uniqueness
   const existing = await db.query('SELECT id FROM patients WHERE uhid = $1', [uhid]);
@@ -12,10 +12,10 @@ const createPatient = async (req, res) => {
   }
 
   const result = await db.query(
-    `INSERT INTO patients (uhid, name, mobile, admission_date, notes, hospital_status, settlement_status, created_by)
-     VALUES ($1, $2, $3, $4, $5, 'active', 'pending', $6)
+    `INSERT INTO patients (uhid, name, admission_date, notes, hospital_status, settlement_status, created_by)
+     VALUES ($1, $2, $3, $4, 'active', 'pending', $5)
      RETURNING *`,
-    [uhid, name, mobile, admission_date, notes || null, req.user.id]
+    [uhid, name, admission_date, notes || null, req.user.id]
   );
 
   const patient = result.rows[0];
@@ -34,7 +34,7 @@ const getPatients = async (req, res) => {
   let idx = 1;
 
   if (search) {
-    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.mobile ILIKE $${idx})`);
+    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx})`);
     params.push(`%${search}%`);
     idx++;
   }
@@ -87,7 +87,7 @@ const updatePatient = async (req, res) => {
 
   // PCC has limited update access
   if (req.user.role === 'pcc') {
-    const allowedFields = ['name', 'mobile', 'notes'];
+    const allowedFields = ['name', 'notes'];
     const requestedFields = Object.keys(updates);
     const disallowed = requestedFields.filter(f => !allowedFields.includes(f));
     if (disallowed.length) {
@@ -131,7 +131,7 @@ const getPatientStats = async (req, res) => {
       COUNT(*) as total_patients,
       COUNT(*) FILTER (WHERE hospital_status = 'active') as active_patients,
       COUNT(*) FILTER (WHERE hospital_status = 'discharged') as discharged_patients,
-      COUNT(*) FILTER (WHERE settlement_status = 'pending') as pending_settlement,
+      COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'pending') as pending_settlement,
       COUNT(*) FILTER (WHERE settlement_status = 'completed') as completed_settlement,
       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as admitted_today
     FROM patients
@@ -146,4 +146,60 @@ const getPatientStats = async (req, res) => {
   return sendSuccess(res, { ...stats.rows[0], ...docStats.rows[0] });
 };
 
-module.exports = { createPatient, getPatients, getPatient, updatePatient, getPatientStats };
+const getUploadHistory = async (req, res) => {
+  // Hourly uploads for today (hour 0-23)
+  const hourlyRes = await db.query(`
+    SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS hour,
+           COUNT(*) AS count
+    FROM documents
+    WHERE is_deleted = false
+      AND created_at >= CURRENT_DATE
+      AND created_at < CURRENT_DATE + INTERVAL '1 day'
+    GROUP BY hour
+    ORDER BY hour
+  `);
+
+  // Monthly uploads for the current year
+  const monthlyRes = await db.query(`
+    SELECT EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS month,
+           COUNT(*) AS count
+    FROM documents
+    WHERE is_deleted = false
+      AND EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata') = EXTRACT(YEAR FROM NOW())
+    GROUP BY month
+    ORDER BY month
+  `);
+
+  // Yearly uploads across all time
+  const yearlyRes = await db.query(`
+    SELECT EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS year,
+           COUNT(*) AS count
+    FROM documents
+    WHERE is_deleted = false
+    GROUP BY year
+    ORDER BY year
+  `);
+
+  // Build full 24-hour array
+  const hourMap = {};
+  hourlyRes.rows.forEach(r => { hourMap[r.hour] = parseInt(r.count); });
+  const hourly = Array.from({ length: 24 }, (_, i) => ({
+    label: `${String(i).padStart(2,'0')}:00`,
+    count: hourMap[i] || 0,
+  }));
+
+  // Build full 12-month array
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthMap = {};
+  monthlyRes.rows.forEach(r => { monthMap[r.month] = parseInt(r.count); });
+  const monthly = Array.from({ length: 12 }, (_, i) => ({
+    label: monthNames[i],
+    count: monthMap[i + 1] || 0,
+  }));
+
+  const yearly = yearlyRes.rows.map(r => ({ label: String(r.year), count: parseInt(r.count) }));
+
+  return sendSuccess(res, { hourly, monthly, yearly });
+};
+
+module.exports = { createPatient, getPatients, getPatient, updatePatient, getPatientStats, getUploadHistory };

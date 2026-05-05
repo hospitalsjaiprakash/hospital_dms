@@ -67,24 +67,46 @@ const auditLog = (action, entityType) => {
   };
 };
 
-const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit }) => {
+const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit, requesterRole, requesterId, patientActivityOnly }) => {
   let conditions = [];
   let params = [];
   let idx = 1;
 
-  if (entityType) { conditions.push(`entity_type = $${idx++}`); params.push(entityType); }
-  if (entityId) { conditions.push(`entity_id = $${idx++}`); params.push(entityId); }
-  if (userId) { conditions.push(`user_id = $${idx++}`); params.push(userId); }
-  if (action) { conditions.push(`action = $${idx++}`); params.push(action); }
+  if (entityType) { conditions.push(`al.entity_type = $${idx++}`); params.push(entityType); }
+  if (entityId) { conditions.push(`al.entity_id = $${idx++}`); params.push(entityId); }
+  if (userId) { conditions.push(`al.user_id = $${idx++}`); params.push(userId); }
+  if (action) { conditions.push(`al.action = $${idx++}`); params.push(action); }
+
+  if (patientActivityOnly && requesterRole !== 'admin') {
+    // Legacy: keep for backward compat
+    conditions.push(`al.entity_type IN ('patient', 'document')`);
+  } else if (requesterRole === 'hod') {
+    // HOD sees: only patient & document activity (no user mgmt / auth logs)
+    // and only from themselves or PCC users — never admin-only actions
+    conditions.push(`al.entity_type IN ('patient', 'document')`);
+    conditions.push(`(al.user_id = $${idx++} OR al.user_role = 'pcc')`);
+    params.push(requesterId);
+  } else if (requesterRole === 'pcc') {
+    // PCC sees: their own activity + ALL patient/document operations by anyone (including admin)
+    conditions.push(`(al.user_id = $${idx++} OR al.entity_type IN ('patient', 'document'))`);
+    params.push(requesterId);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const offset = (page - 1) * limit;
 
   const [countRes, logsRes] = await Promise.all([
-    db.query(`SELECT COUNT(*) FROM audit_logs ${where}`, params),
+    db.query(`SELECT COUNT(*) FROM audit_logs al ${where}`, params),
     db.query(
-      `SELECT al.*, u.name as user_name FROM audit_logs al
+      `SELECT al.*, u.name as user_name, 
+              d.file_name as document_name, d.doc_type as document_type, 
+              p.name as patient_name, p.uhid,
+              target_u.name as target_user_name, target_u.employee_id as target_user_emp_id
+       FROM audit_logs al
        LEFT JOIN users u ON u.id = al.user_id
+       LEFT JOIN users target_u ON al.entity_type = 'user' AND al.entity_id::text = target_u.id::text
+       LEFT JOIN documents d ON al.entity_type = 'document' AND al.entity_id::text = d.id::text
+       LEFT JOIN patients p ON d.patient_id = p.id
        ${where}
        ORDER BY al.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,

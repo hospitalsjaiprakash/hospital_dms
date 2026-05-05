@@ -61,7 +61,6 @@ const migrations = [
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         uhid VARCHAR(50) UNIQUE NOT NULL,
         name VARCHAR(200) NOT NULL,
-        mobile VARCHAR(15) NOT NULL,
         admission_date DATE NOT NULL,
         discharge_date DATE,
         hospital_status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (hospital_status IN ('active', 'discharged')),
@@ -75,7 +74,6 @@ const migrations = [
 
       CREATE INDEX IF NOT EXISTS idx_patients_uhid ON patients(uhid);
       CREATE INDEX IF NOT EXISTS idx_patients_name_trgm ON patients USING GIN (name gin_trgm_ops);
-      CREATE INDEX IF NOT EXISTS idx_patients_mobile ON patients(mobile);
       CREATE INDEX IF NOT EXISTS idx_patients_hospital_status ON patients(hospital_status);
       CREATE INDEX IF NOT EXISTS idx_patients_settlement_status ON patients(settlement_status);
       CREATE INDEX IF NOT EXISTS idx_patients_admission_date ON patients(admission_date DESC);
@@ -209,6 +207,27 @@ const migrations = [
         name VARCHAR(255) UNIQUE NOT NULL,
         applied_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `
+  },
+  {
+    name: '010_drop_users_email_constraint',
+    sql: `
+      ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+    `
+  },
+  {
+    name: '011_add_plain_password_to_users',
+    sql: `
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255);
+    `
+  },
+  {
+    name: '012_drop_patients_mobile_column',
+    sql: `
+      -- Drop mobile column and its index from patients table
+      DROP INDEX IF EXISTS idx_patients_mobile;
+      ALTER TABLE patients DROP COLUMN IF EXISTS mobile;
     `
   }
 ];

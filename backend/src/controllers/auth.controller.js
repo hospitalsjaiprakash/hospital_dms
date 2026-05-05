@@ -9,41 +9,27 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MIN = 15;
 
 const signup = async (req, res) => {
-  const { email, password, name, employee_id } = req.body;
-
-  // Check staff master
-  const staffRes = await db.query(
-    'SELECT * FROM staff_master WHERE email = $1 AND is_active = true',
-    [email]
-  );
-
-  if (!staffRes.rows.length) {
-    return sendError(res, 'Email is not in the approved staff list. Contact admin.', 403);
-  }
-
-  const staff = staffRes.rows[0];
+  const { password, name, employee_id, role, department } = req.body;
 
   // Check if already registered
-  const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+  const existingUser = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
   if (existingUser.rows.length) {
-    return sendError(res, 'Account already exists with this email', 409);
+    return sendError(res, 'Account already exists for this employee', 409);
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
   const result = await db.query(
-    `INSERT INTO users (staff_id, name, email, employee_id, password_hash, role, department)
+    `INSERT INTO users (name, employee_id, password_hash, plain_password, role, department, is_active)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, name, email, role, employee_id`,
-    [staff.id, name, email, employee_id, passwordHash, staff.role, staff.department]
+     RETURNING id, name, role, employee_id`,
+    [name, employee_id, passwordHash, password, role, department || null, false]
   );
 
   const user = result.rows[0];
-  const token = generateToken(user.id, user.role);
 
   await createAuditLog({
     userId: user.id,
-    userEmail: user.email,
     userRole: user.role,
     action: ACTIONS.USER_CREATE,
     entityType: 'user',
@@ -51,26 +37,29 @@ const signup = async (req, res) => {
     ipAddress: req.ip,
   });
 
-  return sendSuccess(res, { user, token }, 'Account created successfully', 201);
+  return sendSuccess(res, { user }, 'Account created successfully. Pending admin approval.', 201);
 };
 
 const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { employee_id, password } = req.body;
 
   const userRes = await db.query(
-    `SELECT id, name, email, role, employee_id, password_hash, is_active, login_attempts, locked_until
-     FROM users WHERE email = $1`,
-    [email]
+    `SELECT id, name, email, role, employee_id, password_hash, is_active, last_login, login_attempts, locked_until
+     FROM users WHERE employee_id = $1`,
+    [employee_id]
   );
 
   if (!userRes.rows.length) {
-    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userEmail: email, ipAddress: req.ip });
-    return sendError(res, 'Invalid email or password', 401);
+    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userEmail: employee_id, ipAddress: req.ip });
+    return sendError(res, 'Invalid employee ID or password', 401);
   }
 
   const user = userRes.rows[0];
 
   if (!user.is_active) {
+    if (user.last_login === null) {
+      return sendError(res, 'Account has not been approved yet. Contact admin.', 403);
+    }
     return sendError(res, 'Account has been deactivated. Contact admin.', 403);
   }
 
@@ -91,8 +80,8 @@ const login = async (req, res) => {
       `UPDATE users SET login_attempts = $1, ${lockUpdate} updated_at = NOW() WHERE id = $2`,
       [attempts, user.id]
     );
-    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userId: user.id, userEmail: email, ipAddress: req.ip });
-    return sendError(res, 'Invalid email or password', 401);
+    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userId: user.id, userEmail: user.email, ipAddress: req.ip });
+    return sendError(res, 'Invalid employee ID or password', 401);
   }
 
   // Reset attempts on successful login

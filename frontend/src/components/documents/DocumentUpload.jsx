@@ -1,13 +1,11 @@
-import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import React, { useState } from 'react';
 import { useMutation, useQueryClient } from 'react-query';
 import { useForm } from 'react-hook-form';
-import imageCompression from 'browser-image-compression';
 import { documentApi } from '../../services/api';
 import { Button, Select, Modal } from '../common';
-import { Upload, FileImage, FileText as FilePdf, X, CheckCircle, AlertCircle } from 'lucide-react';
+import CameraFileUploader from './CameraFileUploader';
+import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
-import clsx from 'clsx';
 
 const DOC_TYPES = [
   { value: 'id_proof', label: 'ID Proof' },
@@ -24,12 +22,13 @@ export default function DocumentUpload({ patientId, open, onClose }) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState(null);
   const [compressing, setCompressing] = useState(false);
+  
+  // register handles the ref forwarding automatically now that common/Index is fixed
   const { register, handleSubmit, formState: { errors }, reset } = useForm();
 
   const { mutate, isLoading } = useMutation(documentApi.upload, {
     onSuccess: () => {
       queryClient.invalidateQueries(['documents', patientId]);
-      queryClient.invalidateQueries('stats');
       toast.success('Document uploaded successfully!');
       handleClose();
     },
@@ -42,113 +41,42 @@ export default function DocumentUpload({ patientId, open, onClose }) {
     onClose();
   };
 
-  const onDrop = useCallback(async (acceptedFiles) => {
-    const f = acceptedFiles[0];
-    if (!f) return;
 
-    const MAX_SIZE = 1 * 1024 * 1024; // 1MB
-
-    if (f.type.startsWith('image/')) {
-      setCompressing(true);
-      try {
-        const compressed = await imageCompression(f, {
-          maxSizeMB: 1,
-          maxWidthOrHeight: 1920,
-          useWebWorker: true,
-        });
-        setFile({ file: compressed, preview: URL.createObjectURL(compressed), type: 'image' });
-      } catch {
-        toast.error('Compression failed');
-      } finally {
-        setCompressing(false);
-      }
-    } else if (f.type === 'application/pdf') {
-      if (f.size > MAX_SIZE) {
-        toast.error('PDF must be under 1MB');
-        return;
-      }
-      setFile({ file: f, preview: null, type: 'pdf' });
-    }
-  }, []);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { 'image/jpeg': [], 'image/png': [], 'application/pdf': [] },
-    maxFiles: 1,
-    disabled: isLoading || compressing,
-  });
 
   const onSubmit = async (data) => {
     if (!file) { toast.error('Please select a file'); return; }
     const formData = new FormData();
-    formData.append('file', file.file);
+    
+    let fileName = file.file.name;
+    if (!fileName || fileName === 'blob' || fileName === 'image') {
+      const ext = file.type === 'pdf' ? 'pdf' : 'jpg';
+      fileName = `${data.doc_type}_${Date.now()}.${ext}`;
+    } else if (!fileName.includes('.')) {
+      const ext = file.type === 'pdf' ? 'pdf' : 'jpg';
+      fileName = `${fileName}.${ext}`;
+    }
+
+    formData.append('file', file.file, fileName);
     formData.append('patient_id', patientId);
     formData.append('doc_type', data.doc_type);
     if (data.notes) formData.append('notes', data.notes);
     mutate(formData);
   };
 
-  const formatBytes = (bytes) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
 
   return (
     <Modal open={open} onClose={handleClose} title="Upload Document" maxWidth="max-w-md">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {/* Dropzone */}
-        <div
-          {...getRootProps()}
-          className={clsx(
-            'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all',
-            isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50',
-            (isLoading || compressing) && 'pointer-events-none opacity-60'
-          )}
-        >
-          <input {...getInputProps()} />
+        <CameraFileUploader 
+          file={file} 
+          onChange={setFile} 
+          disabled={isLoading} 
+        />
 
-          {compressing ? (
-            <div className="space-y-2">
-              <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />
-              <p className="text-sm text-blue-600 font-medium">Compressing image...</p>
-            </div>
-          ) : file ? (
-            <div className="space-y-2">
-              {file.type === 'image' ? (
-                <img src={file.preview} alt="Preview" className="w-20 h-20 object-cover rounded-lg mx-auto border border-gray-200" />
-              ) : (
-                <div className="w-16 h-16 bg-red-50 rounded-xl flex items-center justify-center mx-auto">
-                  <FilePdf className="w-8 h-8 text-red-500" />
-                </div>
-              )}
-              <p className="text-sm font-semibold text-gray-700">{file.file.name}</p>
-              <p className="text-xs text-gray-400">{formatBytes(file.file.size)}</p>
-              <div className="flex items-center justify-center gap-1 text-green-600">
-                <CheckCircle size={13} />
-                <span className="text-xs font-medium">Ready to upload</span>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mx-auto"
-              >
-                <X size={12} /> Remove file
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mx-auto">
-                <Upload className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-700">
-                  {isDragActive ? 'Drop file here' : 'Drag & drop or click to select'}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">JPG, PNG, PDF · Max 1MB (images auto-compressed)</p>
-              </div>
-            </div>
-          )}
-        </div>
-
+        {/* Ref fixed via forwardRef in common/Index */}
         <Select
-          label="Document Type" required
+          label="Type" required
           error={errors.doc_type?.message}
           {...register('doc_type', { required: 'Please select document type' })}
         >

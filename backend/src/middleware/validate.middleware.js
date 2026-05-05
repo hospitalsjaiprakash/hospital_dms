@@ -16,30 +16,28 @@ const validate = (schema, source = 'body') => {
 // Schemas
 const schemas = {
   signup: Joi.object({
-    email: Joi.string().email().lowercase().required(),
     password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required()
       .messages({ 'string.pattern.base': 'Password must contain uppercase, lowercase, and number' }),
     name: Joi.string().min(2).max(200).required(),
     employee_id: Joi.string().min(3).max(50).required(),
+    role: Joi.string().valid('pcc', 'hod').required(),
+    department: Joi.string().max(100).optional().allow(''),
   }),
 
   login: Joi.object({
-    email: Joi.string().email().lowercase().required(),
+    employee_id: Joi.string().min(3).max(50).required(),
     password: Joi.string().required(),
   }),
 
   createPatient: Joi.object({
     uhid: Joi.string().min(3).max(50).required(),
     name: Joi.string().min(2).max(200).required(),
-    mobile: Joi.string().pattern(/^[6-9]\d{9}$/).required()
-      .messages({ 'string.pattern.base': 'Enter valid 10-digit Indian mobile number' }),
     admission_date: Joi.date().iso().max('now').required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
   updatePatient: Joi.object({
     name: Joi.string().min(2).max(200).optional(),
-    mobile: Joi.string().pattern(/^[6-9]\d{9}$/).optional(),
     hospital_status: Joi.string().valid('active', 'discharged').optional(),
     settlement_status: Joi.string().valid('pending', 'completed').optional(),
     discharge_date: Joi.date().iso().optional().allow(null),
@@ -58,7 +56,6 @@ const schemas = {
   }),
 
   createUser: Joi.object({
-    email: Joi.string().email().lowercase().required(),
     name: Joi.string().min(2).max(200).required(),
     employee_id: Joi.string().min(3).max(50).required(),
     role: Joi.string().valid('pcc', 'hod', 'admin').required(),

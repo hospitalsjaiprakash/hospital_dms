@@ -1,32 +1,79 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQueryClient } from 'react-query';
-import { patientApi } from '../services/api';
-import { Button, Input, Card } from '../components/common';
-import { ArrowLeft, User, Phone, Hash, Calendar } from 'lucide-react';
+import { patientApi, documentApi } from '../services/api';
+import { Button, Input, Card, Select } from '../components/common';
+import CameraFileUploader from '../components/documents/CameraFileUploader';
+import { ArrowLeft, User, Hash, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const DOC_TYPES = [
+  { value: 'id_proof', label: 'ID Proof' },
+  { value: 'ayushman_card', label: 'Ayushman Card' },
+  { value: 'admission_photo', label: 'Admission Photo' },
+  { value: 'prescription', label: 'Prescription' },
+  { value: 'lab_reports', label: 'Lab Reports' },
+  { value: 'scans', label: 'Scans / Radiology' },
+  { value: 'discharge_summary', label: 'Discharge Summary' },
+  { value: 'other', label: 'Other' },
+];
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { register, handleSubmit, formState: { errors } } = useForm();
 
-  const { mutate, isLoading } = useMutation(patientApi.create, {
-    onSuccess: (res) => {
+  const [docFiles, setDocFiles] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const { mutate: createPatient, isLoading: isCreating } = useMutation(patientApi.create);
+
+  const onSubmit = async (data) => {
+    try {
+      if (docFiles.length > 0 && !data.doc_type) {
+        toast.error('Please select a document type for the attached files');
+        return;
+      }
+
+      // Step 1: Create Patient
+      const res = await createPatientAsync(data);
+      const patientId = res.data.id;
+
+      // Step 2: Upload all documents
+      if (docFiles.length > 0) {
+        setIsUploading(true);
+        for (let i = 0; i < docFiles.length; i++) {
+          const f = docFiles[i];
+          const formData = new FormData();
+          const fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${f.type === 'pdf' ? 'pdf' : 'jpg'}`;
+          formData.append('file', f.file, fileName);
+          formData.append('patient_id', patientId);
+          formData.append('doc_type', data.doc_type);
+          await documentApi.upload(formData);
+        }
+      }
+
       queryClient.invalidateQueries('patients');
       queryClient.invalidateQueries('stats');
-      toast.success('Patient created successfully!');
-      navigate(`/patients/${res.data.id}`);
-    },
-    onError: (err) => toast.error(err.message),
+      toast.success(docFiles.length > 0 ? `Patient and ${docFiles.length} document(s) saved!` : 'Patient created successfully!');
+      navigate(`/patients/${patientId}`);
+    } catch (err) {
+      toast.error(err.message || 'An error occurred');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const createPatientAsync = (data) => new Promise((resolve, reject) => {
+    createPatient(data, { onSuccess: resolve, onError: reject });
   });
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+        <button onClick={() => navigate(-1)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors flex-shrink-0">
           <ArrowLeft size={18} />
         </button>
         <div>
@@ -36,7 +83,7 @@ export default function NewPatientPage() {
       </div>
 
       <Card>
-        <form onSubmit={handleSubmit(mutate)} className="space-y-5">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <Input
@@ -50,15 +97,6 @@ export default function NewPatientPage() {
               label="UHID" placeholder="UHID-2024-001" required icon={Hash}
               error={errors.uhid?.message}
               {...register('uhid', { required: 'UHID is required', minLength: { value: 3, message: 'Min 3 characters' } })}
-            />
-
-            <Input
-              label="Mobile Number" placeholder="9876543210" required icon={Phone} type="tel" maxLength={10}
-              error={errors.mobile?.message}
-              {...register('mobile', {
-                required: 'Mobile is required',
-                pattern: { value: /^[6-9]\d{9}$/, message: 'Enter valid 10-digit mobile' }
-              })}
             />
 
             <Input
@@ -78,9 +116,37 @@ export default function NewPatientPage() {
             </ul>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="secondary" type="button" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button type="submit" loading={isLoading}>Create Patient</Button>
+          <div className="pt-4 border-t border-gray-100 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">Initial Document <span className="text-gray-400 font-normal text-sm">(Optional)</span></h3>
+              <p className="text-xs text-gray-500 mb-4">Attach an ID proof or admission photo while creating the patient.</p>
+            </div>
+
+            <CameraFileUploader
+              files={docFiles}
+              onChange={setDocFiles}
+              disabled={isCreating || isUploading}
+            />
+
+            {docFiles.length > 0 && (
+              <div className="mt-3">
+                <Select
+                  label="Type" required
+                  error={errors.doc_type?.message}
+                  {...register('doc_type', { required: docFiles.length > 0 ? 'Please select document type' : false })}
+                >
+                  <option value="">Select type...</option>
+                  {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
+            <Button variant="secondary" type="button" onClick={() => navigate(-1)} disabled={isCreating || isUploading} className="w-full sm:w-auto">Cancel</Button>
+            <Button type="submit" loading={isCreating || isUploading} className="w-full sm:w-auto">
+              {isUploading ? `Uploading ${docFiles.length} file(s)...` : 'Create Patient'}
+            </Button>
           </div>
         </form>
       </Card>

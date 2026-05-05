@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
+import { useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { auditApi } from '../services/api';
 import { Card, Badge, Spinner, EmptyState, Pagination } from '../components/common';
+import DocumentActionModal from '../components/documents/DocumentActionModal';
 import { ClipboardList, Search, Filter, LogIn, Upload, Trash2, Edit2, Download, User, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -25,17 +28,23 @@ const ACTION_META = {
 const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue' };
 
 export default function AuditLogsPage() {
+  const location = useLocation();
+  const { user } = useAuth();
+  const isMyActivity = location.pathname === '/my-activity';
+
   const [page, setPage] = useState(1);
   const [actionFilter, setActionFilter] = useState('');
   const [entityFilter, setEntityFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [selectedDocId, setSelectedDocId] = useState(null);
 
   const { data, isLoading } = useQuery(
-    ['audit-logs', page, actionFilter, entityFilter],
+    ['audit-logs', page, actionFilter, entityFilter, isMyActivity ? user?.id : 'all'],
     () => auditApi.getLogs({
       page, limit: 20,
       action: actionFilter || undefined,
       entity_type: entityFilter || undefined,
+      user_id: isMyActivity ? user?.id : undefined,
     }),
     { keepPreviousData: true }
   );
@@ -46,15 +55,19 @@ export default function AuditLogsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Audit Logs</h1>
-        <p className="text-gray-400 text-sm mt-0.5">Immutable record of all system activities</p>
+        <h1 className="text-xl font-bold text-gray-900">{isMyActivity ? 'My Activity' : 'Audit Logs'}</h1>
+        <p className="text-gray-400 text-sm mt-0.5">
+          {isMyActivity
+            ? 'Your personal activity & all patient operations'
+            : 'Immutable record of all system activities'}
+        </p>
       </div>
 
       {/* Filters */}
       <Card>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
           <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
-            className="rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
             <option value="">All Actions</option>
             {Object.entries(ACTION_META).map(([key, val]) => (
               <option key={key} value={key}>{val.label}</option>
@@ -62,7 +75,7 @@ export default function AuditLogsPage() {
           </select>
 
           <select value={entityFilter} onChange={(e) => { setEntityFilter(e.target.value); setPage(1); }}
-            className="rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
             <option value="">All Entities</option>
             <option value="auth">Auth</option>
             <option value="patient">Patient</option>
@@ -73,13 +86,13 @@ export default function AuditLogsPage() {
           {(actionFilter || entityFilter) && (
             <button
               onClick={() => { setActionFilter(''); setEntityFilter(''); setPage(1); }}
-              className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              className="w-full sm:w-auto px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Clear filters
             </button>
           )}
 
-          <span className="ml-auto text-sm text-gray-400 self-center">
+          <span className="sm:ml-auto text-sm text-gray-400 self-center">
             {pagination?.total ?? 0} total entries
           </span>
         </div>
@@ -115,8 +128,17 @@ export default function AuditLogsPage() {
                   gray: 'bg-gray-50 text-gray-500',
                 };
 
+                const isDocumentRow = log.entity_type === 'document' && log.entity_id;
+
                 return (
-                  <div key={log.id} className="flex sm:grid sm:grid-cols-12 sm:gap-3 items-center px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                  <div
+                    key={log.id}
+                    onClick={() => isDocumentRow ? setSelectedDocId(log.entity_id) : null}
+                    className={clsx(
+                      "flex sm:grid sm:grid-cols-12 sm:gap-3 items-center px-5 py-3.5 transition-colors",
+                      isDocumentRow ? "cursor-pointer hover:bg-blue-50" : "hover:bg-gray-50"
+                    )}
+                  >
                     {/* Action */}
                     <div className="sm:col-span-2 flex items-center gap-2 flex-shrink-0">
                       <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center', colorMap[meta.color])}>
@@ -144,16 +166,34 @@ export default function AuditLogsPage() {
 
                     {/* Details */}
                     <div className="hidden sm:flex sm:col-span-3 items-center">
-                      {log.new_values && (
+                      {isDocumentRow && log.document_name ? (
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-semibold text-gray-800 truncate" title={log.document_name}>
+                            {['blob', 'image'].includes(log.document_name) ? 'Document' : log.document_name} <span className="text-gray-400 font-normal">({log.document_type})</span>
+                          </span>
+                          <span className="text-[10px] text-gray-500 truncate" title={log.patient_name}>
+                            {log.patient_name} • {log.uhid}
+                          </span>
+                        </div>
+                      ) : log.entity_type === 'user' && log.action === 'user_create' ? (
+                        <span className="text-xs font-medium text-gray-700 truncate max-w-full" title="User created/requested">
+                          {(!log.user_id || log.user_id === log.entity_id)
+                            ? `${log.target_user_name || log.user_name} (${log.target_user_emp_id || 'ID unknown'}) requested account`
+                            : `Admin created user ${log.target_user_name || log.new_values?.name} (${log.target_user_emp_id || 'ID unknown'})`}
+                        </span>
+                      ) : log.entity_type === 'user' && log.action === 'user_update' && log.new_values && typeof log.new_values.is_active !== 'undefined' ? (
+                        <span className="text-xs font-medium text-gray-700 truncate max-w-full" title={`User ${log.new_values.is_active ? 'approved' : 'deactivated'}`}>
+                          System Admin {log.new_values.is_active ? 'approved' : 'deactivated'} user {log.target_user_name || 'unknown'} ({log.target_user_emp_id || 'ID unknown'})
+                        </span>
+                      ) : log.new_values ? (
                         <span className="text-xs text-gray-500 truncate max-w-full">
                           {typeof log.new_values === 'object'
                             ? Object.entries(log.new_values).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(', ')
                             : JSON.stringify(log.new_values).substring(0, 60)}
                         </span>
-                      )}
-                      {log.ip_address && !log.new_values && (
+                      ) : log.ip_address ? (
                         <span className="text-xs text-gray-400 font-mono">{log.ip_address}</span>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Time */}
@@ -174,6 +214,8 @@ export default function AuditLogsPage() {
           </>
         )}
       </Card>
+
+      <DocumentActionModal docId={selectedDocId} open={!!selectedDocId} onClose={() => setSelectedDocId(null)} />
     </div>
   );
 }

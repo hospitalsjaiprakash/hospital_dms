@@ -10,7 +10,8 @@ const api = axios.create({
 // Request interceptor - attach token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('hms_token');
+    // Check sessionStorage first (tab-specific), then localStorage
+    const token = sessionStorage.getItem('hms_token') || localStorage.getItem('hms_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
@@ -22,6 +23,8 @@ api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
+      sessionStorage.removeItem('hms_token');
+      sessionStorage.removeItem('hms_user');
       localStorage.removeItem('hms_token');
       localStorage.removeItem('hms_user');
       window.location.href = '/login';
@@ -45,15 +48,18 @@ export const patientApi = {
   create: (data) => api.post('/patients', data),
   update: (id, data) => api.patch(`/patients/${id}`, data),
   getStats: () => api.get('/patients/stats'),
+  getUploadHistory: () => api.get('/patients/upload-history'),
 };
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 export const documentApi = {
+  getAll: (params) => api.get('/documents', { params }),
   upload: (formData) => api.post('/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 60000,
   }),
   getForPatient: (patientId, params) => api.get(`/patients/${patientId}/documents`, { params }),
+  getOne: (id) => api.get(`/documents/${id}`),
   update: (id, data) => api.patch(`/documents/${id}`, data),
   delete: (id) => api.delete(`/documents/${id}`),
   exportZip: (patientId) => api.get(`/patients/${patientId}/documents/export`, { responseType: 'blob' }),
@@ -64,8 +70,6 @@ export const userApi = {
   getAll: (params) => api.get('/users', { params }),
   create: (data) => api.post('/users', data),
   toggleStatus: (id) => api.patch(`/users/${id}/status`),
-  getStaffMaster: (params) => api.get('/staff-master', { params }),
-  addToStaffMaster: (data) => api.post('/staff-master', data),
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

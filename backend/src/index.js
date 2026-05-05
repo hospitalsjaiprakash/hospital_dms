@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const path = require('path'); // Added path module
 
 const routes = require('./routes');
 const logger = require('./utils/logger');
@@ -37,14 +38,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { success: false, message: 'Too many auth attempts. Try again in 15 minutes.' },
-});
+
 
 app.use('/api/', limiter);
-app.use('/api/auth/', authLimiter);
 
 // ── Body Parsing ──────────────────────────────────────────────────────────────
 app.use(compression());
@@ -55,6 +51,18 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(morgan('combined', {
   stream: { write: (message) => logger.info(message.trim()) },
   skip: (req) => req.url === '/api/health',
+}));
+
+// ── Static Files (CRITICAL: Added this to fix your View error) ────────────────
+// This must be placed BEFORE the routes and the 404 handler
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// ── Root Route ────────────────────────────────────────────────────────────────
+app.get('/', (req, res) => res.json({
+  success: true,
+  message: '🏥 Hospital DMS API is running',
+  version: '1.0.0',
+  docs: '/api/health',
 }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────

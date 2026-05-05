@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { patientApi } from '../services/api';
 import { Card, Badge, Button, Input, Select, Spinner, EmptyState, Pagination } from '../components/common';
@@ -13,20 +13,32 @@ const STATUS_COLORS = {
 };
 
 export default function PatientsPage() {
+  const location = useLocation();
+  const urlTab = new URLSearchParams(location.search).get('tab') || 'all';
   const [search, setSearch] = useState('');
-  const [hospitalStatus, setHospitalStatus] = useState('');
-  const [settlementStatus, setSettlementStatus] = useState('');
+  const [activeTab, setActiveTab] = useState(urlTab);
   const [page, setPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
 
+  const getHospitalStatus = () => {
+    if (activeTab === 'active') return 'active';
+    if (activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled') return 'discharged';
+    return '';
+  };
+
+  const getSettlementStatus = () => {
+    if (activeTab === 'pending') return 'pending';
+    if (activeTab === 'settled') return 'completed';
+    return '';
+  };
+
   const { data, isLoading, isFetching } = useQuery(
-    ['patients', debouncedSearch, hospitalStatus, settlementStatus, page],
+    ['patients', debouncedSearch, activeTab, page],
     () => patientApi.getAll({
       search: debouncedSearch,
-      hospital_status: hospitalStatus,
-      settlement_status: settlementStatus,
+      hospital_status: getHospitalStatus(),
+      settlement_status: getSettlementStatus(),
       page,
       limit: 20,
     }),
@@ -36,19 +48,20 @@ export default function PatientsPage() {
   const patients = data?.data || [];
   const pagination = data?.pagination;
 
-  const clearFilters = () => {
-    setSearch('');
-    setHospitalStatus('');
-    setSettlementStatus('');
-    setPage(1);
-  };
+  const TABS = [
+    { id: 'all', label: 'All Patients' },
+    { id: 'active', label: 'Active (Admitted)' },
+    { id: 'discharged', label: 'Discharged' },
+    { id: 'pending', label: 'Discharged (Pending)' },
+    { id: 'settled', label: 'Discharged (Settled)' },
+  ];
 
-  const hasFilters = search || hospitalStatus || settlementStatus;
+  const hasFilters = search || activeTab !== 'all';
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Patients</h1>
           <p className="text-gray-400 text-sm mt-0.5">
@@ -57,58 +70,42 @@ export default function PatientsPage() {
           </p>
         </div>
         <Link to="/patients/new">
-          <Button><Plus size={15} /> New Patient</Button>
+          <Button size="sm" className="w-full sm:w-auto">
+            <Plus size={15} />
+            <span className="hidden sm:inline">New Patient</span>
+            <span className="sm:hidden">New Patient</span>
+          </Button>
         </Link>
       </div>
 
-      {/* Search & Filters */}
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search by UHID, name, or mobile..."
-              className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300 transition-all"
-            />
-          </div>
-          <Button
-            variant="secondary"
-            onClick={() => setShowFilters(!showFilters)}
-            className={showFilters ? 'border-blue-300 text-blue-600' : ''}
+      {/* Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => { setActiveTab(tab.id); setPage(1); }}
+            className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              activeTab === tab.id
+                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'
+            }`}
           >
-            <Filter size={14} />
-            Filters
-            {hasFilters && <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />}
-          </Button>
-          {hasFilters && (
-            <Button variant="ghost" onClick={clearFilters} size="sm">Clear</Button>
-          )}
-        </div>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        {showFilters && (
-          <div className="flex flex-col sm:flex-row gap-3 mt-3 pt-3 border-t border-gray-100">
-            <Select
-              value={hospitalStatus}
-              onChange={(e) => { setHospitalStatus(e.target.value); setPage(1); }}
-              className="flex-1"
-            >
-              <option value="">All Hospital Status</option>
-              <option value="active">Active (Admitted)</option>
-              <option value="discharged">Discharged</option>
-            </Select>
-            <Select
-              value={settlementStatus}
-              onChange={(e) => { setSettlementStatus(e.target.value); setPage(1); }}
-              className="flex-1"
-            >
-              <option value="">All Settlement Status</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-            </Select>
-          </div>
-        )}
+      {/* Search */}
+      <Card>
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by UHID or name..."
+            className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300 transition-all"
+          />
+        </div>
       </Card>
 
       {/* Patient List */}
@@ -149,7 +146,6 @@ export default function PatientsPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">{patient.name}</p>
                       <p className="text-xs text-gray-400 sm:hidden">{patient.uhid}</p>
-                      <p className="text-xs text-gray-400">{patient.mobile}</p>
                     </div>
                   </div>
 
@@ -159,14 +155,17 @@ export default function PatientsPage() {
                   </div>
 
                   {/* Date */}
-                  <div className="hidden sm:flex sm:col-span-2 items-center">
-                    <span className="text-xs text-gray-500">{format(new Date(patient.admission_date), 'dd MMM yyyy')}</span>
+                  <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                    <span className="text-xs font-semibold text-gray-700">{format(new Date(patient.admission_date), 'dd MMM yyyy')}</span>
+                    <span className="text-[10px] text-gray-400 mt-0.5">{format(new Date(patient.created_at), 'hh:mm a')}</span>
                   </div>
 
                   {/* Status */}
                   <div className="hidden sm:flex sm:col-span-2 flex-col gap-1 items-start">
                     <Badge variant={STATUS_COLORS[patient.hospital_status]}>{patient.hospital_status}</Badge>
-                    <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">{patient.settlement_status}</Badge>
+                    {patient.hospital_status === 'discharged' && (
+                      <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">{patient.settlement_status}</Badge>
+                    )}
                   </div>
 
                   {/* Doc count */}

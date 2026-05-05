@@ -13,6 +13,7 @@ import PatientDetailPage from './pages/PatientDetailPage';
 import NewPatientPage from './pages/NewPatientPage';
 import UsersPage from './pages/UsersPage';
 import AuditLogsPage from './pages/AuditLogsPage';
+import DocumentsPage from './pages/DocumentsPage';
 import Layout from './components/layout/Layout';
 
 const queryClient = new QueryClient({
@@ -41,7 +42,15 @@ function ProtectedRoute({ children, roles }) {
 }
 
 function PublicRoute({ children }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-500 text-sm font-medium">Loading...</p>
+      </div>
+    </div>
+  );
   if (user) return <Navigate to="/dashboard" replace />;
   return children;
 }
@@ -60,8 +69,10 @@ export default function App() {
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
+              <Route path="documents" element={<DocumentsPage />} />
               <Route path="users" element={<ProtectedRoute roles={['admin']}><UsersPage /></ProtectedRoute>} />
               <Route path="audit-logs" element={<ProtectedRoute roles={['admin', 'hod']}><AuditLogsPage /></ProtectedRoute>} />
+              <Route path="my-activity" element={<ProtectedRoute roles={['hod', 'pcc']}><AuditLogsPage /></ProtectedRoute>} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

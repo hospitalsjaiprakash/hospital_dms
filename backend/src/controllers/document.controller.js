@@ -57,15 +57,24 @@ const uploadDocument = async (req, res) => {
     uploadedBy: req.user.id,
   });
 
+  let finalFileName = req.file.originalname;
+  if (!finalFileName || finalFileName === 'blob' || finalFileName === 'image') {
+    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+    finalFileName = `${doc_type}_${Date.now()}.${ext}`;
+  } else if (!finalFileName.includes('.')) {
+    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+    finalFileName = `${finalFileName}.${ext}`;
+  }
+
   const result = await db.query(
     `INSERT INTO documents (patient_id, file_url, s3_key, file_name, file_size, mime_type, doc_type, notes, uploaded_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [patient_id, url, s3Key, req.file.originalname, fileBuffer.length, req.file.mimetype, doc_type, notes || null, req.user.id]
+    [patient_id, url, s3Key, finalFileName, fileBuffer.length, req.file.mimetype, doc_type, notes || null, req.user.id]
   );
 
   const document = result.rows[0];
-  await auditLog(ACTIONS.DOCUMENT_UPLOAD, 'document')(req, document.id, null, { patient_id, doc_type, file_name: req.file.originalname });
+  await auditLog(ACTIONS.DOCUMENT_UPLOAD, 'document')(req, document.id, null, { patient_id, doc_type, file_name: finalFileName });
 
   return sendSuccess(res, document, 'Document uploaded successfully', 201);
 };
@@ -111,6 +120,30 @@ const getPatientDocuments = async (req, res) => {
 };
 
 /**
+ * Get a single document by ID
+ */
+const getDocument = async (req, res) => {
+  const { id } = req.params;
+
+  const docRes = await db.query(
+    `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role
+     FROM documents d
+     JOIN users u ON u.id = d.uploaded_by
+     WHERE d.id = $1`,
+    [id]
+  );
+
+  if (!docRes.rows.length) return sendError(res, 'Document not found', 404);
+  const doc = docRes.rows[0];
+
+  if (!doc.is_deleted) {
+    doc.presigned_url = await getPresignedUrl(doc.s3_key).catch(() => doc.file_url);
+  }
+
+  return sendSuccess(res, doc, 'Document fetched');
+};
+
+/**
  * Update document metadata
  */
 const updateDocument = async (req, res) => {
@@ -131,11 +164,57 @@ const updateDocument = async (req, res) => {
   }
 
   const { doc_type, notes } = req.body;
+  let finalDocType = doc_type || doc.doc_type;
+  let newUrl = doc.file_url;
+  let newS3Key = doc.s3_key;
+  let newFileName = doc.file_name;
+  let newFileSize = doc.file_size;
+  let newMimeType = doc.mime_type;
+
+  if (req.file) {
+    if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
+      return sendError(res, 'Only JPG, PNG, and PDF files are allowed', 400);
+    }
+    
+    let fileBuffer = req.file.buffer;
+    if (['image/jpeg', 'image/png'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
+      fileBuffer = await sharp(fileBuffer).resize({ width: 1920, withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+      if (fileBuffer.length > MAX_FILE_SIZE) return sendError(res, 'File too large even after compression. Max 1MB allowed.', 400);
+    }
+    if (req.file.mimetype === 'application/pdf' && fileBuffer.length > MAX_FILE_SIZE) {
+      return sendError(res, 'PDF file size exceeds 1MB limit', 400);
+    }
+
+    newS3Key = generateS3Key(doc.patient_id, finalDocType, req.file.originalname);
+    const { url } = await uploadToS3(fileBuffer, newS3Key, req.file.mimetype, {
+      patientId: doc.patient_id,
+      docType: finalDocType,
+      uploadedBy: req.user.id,
+    });
+
+    newUrl = url;
+    newFileName = req.file.originalname;
+    if (!newFileName || newFileName === 'blob' || newFileName === 'image') {
+      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+      newFileName = `${finalDocType}_${Date.now()}.${ext}`;
+    } else if (!newFileName.includes('.')) {
+      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+      newFileName = `${newFileName}.${ext}`;
+    }
+    
+    newFileSize = fileBuffer.length;
+    newMimeType = req.file.mimetype;
+
+    // Delete old file asynchronously
+    deleteFromS3(doc.s3_key).catch(err => console.error('Failed to delete old file from S3:', err));
+  }
+
   const result = await db.query(
-    `UPDATE documents SET doc_type = COALESCE($1, doc_type), notes = COALESCE($2, notes),
-     updated_by = $3, updated_at = NOW()
-     WHERE id = $4 RETURNING *`,
-    [doc_type, notes, req.user.id, id]
+    `UPDATE documents SET doc_type = $1, notes = COALESCE($2, notes),
+     file_url = $3, s3_key = $4, file_name = $5, file_size = $6, mime_type = $7,
+     updated_by = $8, updated_at = NOW()
+     WHERE id = $9 RETURNING *`,
+    [finalDocType, notes, newUrl, newS3Key, newFileName, newFileSize, newMimeType, req.user.id, id]
   );
 
   await auditLog(ACTIONS.DOCUMENT_UPDATE, 'document')(req, id, { doc_type: doc.doc_type, notes: doc.notes }, req.body);
@@ -205,8 +284,20 @@ const exportPatientDocuments = async (req, res) => {
 
   for (const doc of docsRes.rows) {
     const presignedUrl = await getPresignedUrl(doc.s3_key);
-    const ext = doc.file_name.split('.').pop();
-    const fileName = `${doc.doc_type}/${doc.created_at.toISOString().split('T')[0]}_${doc.file_name}`;
+    
+    let baseName = doc.file_name || 'document';
+    if (baseName === 'blob' || baseName === 'image') {
+      baseName = `${doc.doc_type}_${new Date(doc.created_at).getTime()}`;
+    }
+    
+    if (!baseName.includes('.')) {
+      if (doc.mime_type === 'application/pdf') baseName += '.pdf';
+      else if (doc.mime_type === 'image/jpeg') baseName += '.jpg';
+      else if (doc.mime_type === 'image/png') baseName += '.png';
+      else baseName += '.jpg';
+    }
+
+    const fileName = `${doc.doc_type}_${doc.created_at.toISOString().split('T')[0]}_${baseName}`;
 
     await new Promise((resolve, reject) => {
       https.get(presignedUrl, (fileStream) => {
@@ -221,4 +312,69 @@ const exportPatientDocuments = async (req, res) => {
   await auditLog(ACTIONS.EXPORT_ZIP, 'patient')(req, patient_id, null, { document_count: docsRes.rows.length });
 };
 
-module.exports = { uploadDocument, getPatientDocuments, updateDocument, deleteDocument, exportPatientDocuments };
+/**
+ * Get all documents across all patients
+ */
+const getAllDocuments = async (req, res) => {
+  const { page, limit, offset } = getPaginationParams(req.query);
+  const { today, doc_type, search } = req.query;
+
+  const conditions = [`d.is_deleted = false`];
+  const params = [];
+  let idx = 1;
+
+  if (today === 'true') {
+    conditions.push(`d.created_at >= CURRENT_DATE`);
+  }
+  
+  if (doc_type) {
+    conditions.push(`d.doc_type = $${idx++}`);
+    params.push(doc_type);
+  }
+
+  if (search) {
+    conditions.push(`(p.name ILIKE $${idx} OR p.uhid ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+
+  const [countRes, docsRes] = await Promise.all([
+    db.query(
+      `SELECT COUNT(*) FROM documents d 
+       JOIN patients p ON p.id = d.patient_id 
+       ${where}`, 
+      params
+    ),
+    db.query(
+      `SELECT d.*, p.name as patient_name, p.uhid as patient_uhid, u.name as uploaded_by_name, u.role as uploader_role
+       FROM documents d
+       JOIN patients p ON p.id = d.patient_id
+       JOIN users u ON u.id = d.uploaded_by
+       ${where}
+       ORDER BY d.created_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
+    ),
+  ]);
+
+  const docs = await Promise.all(
+    docsRes.rows.map(async (doc) => ({
+      ...doc,
+      presigned_url: await getPresignedUrl(doc.s3_key).catch(() => doc.file_url),
+    }))
+  );
+
+  return sendPaginated(res, docs, parseInt(countRes.rows[0].count), page, limit);
+};
+
+module.exports = { 
+  uploadDocument, 
+  getPatientDocuments, 
+  getDocument, 
+  updateDocument, 
+  deleteDocument, 
+  exportPatientDocuments,
+  getAllDocuments
+};
