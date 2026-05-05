@@ -7,13 +7,12 @@ import { Card, Badge, Button, Spinner, EmptyState, Modal } from '../components/c
 import DocumentUpload from '../components/documents/DocumentUpload';
 import DocumentViewerModal from '../components/documents/DocumentViewerModal';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
-import MultiCameraUpload from '../components/documents/MultiCameraUpload';
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, API_URL as CONST_API_URL } from '../components/documents/constants';
 import {
   ArrowLeft, Edit2, Upload, Download, FileText, Image,
   Trash2, Eye, Calendar, Hash, User,
   CheckCircle, Clock, Activity, AlertCircle, MoreVertical,
-  File, X, ZoomIn, Camera
+  File, X, ZoomIn
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -259,7 +258,6 @@ export default function PatientDetailPage() {
   const queryClient = useQueryClient();
 
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteDoc, setDeleteDoc] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
@@ -349,14 +347,9 @@ export default function PatientDetailPage() {
             </Button>
           )}
           {canUpload && (
-            <>
-              <Button size="sm" variant="secondary" onClick={() => setCameraOpen(true)}>
-                <Camera size={13} /> Camera
-              </Button>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <Upload size={13} /> Upload Doc
-              </Button>
-            </>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Upload size={13} /> Upload Doc
+            </Button>
           )}
         </div>
       </div>
@@ -472,10 +465,6 @@ export default function PatientDetailPage() {
 
       {uploadOpen && (
         <DocumentUpload patientId={id} open={uploadOpen} onClose={() => setUploadOpen(false)} />
-      )}
-
-      {cameraOpen && (
-        <MultiCameraUpload patientId={id} open={cameraOpen} onClose={() => setCameraOpen(false)} />
       )}
 
       {editOpen && patient && (
