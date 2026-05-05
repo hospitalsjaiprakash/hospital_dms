@@ -313,16 +313,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
               </div>
             ))}
 
-            {/* ── + Add More tile ── */}
-            {!disabled && !compressing && (
-              <button type="button" onClick={startCamera}
-                className="w-16 h-16 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50 hover:bg-blue-100 flex flex-col items-center justify-center gap-0.5 text-blue-500 hover:text-blue-700 transition-all active:scale-95"
-                title="Take more photos"
-              >
-                <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-base font-bold leading-none">+</div>
-                <span className="text-[8px] font-semibold uppercase tracking-wide">Add</span>
-              </button>
-            )}
+
           </div>
         </div>
       )}
@@ -355,20 +346,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         )}
       </div>
 
-      {!disabled && !compressing && (
-        <>
-          <div className="flex items-center gap-3">
-            <div className="h-px bg-gray-200 flex-1" />
-            <span className="text-xs text-gray-400 font-medium uppercase">OR</span>
-            <div className="h-px bg-gray-200 flex-1" />
-          </div>
-          <Button variant="secondary" type="button" className="w-full"
-            onClick={(e) => { e.stopPropagation(); startCamera(); }}>
-            <Camera size={16} className="mr-2" />
-            {files.length > 0 ? 'Take More Photos' : 'Take Photo with Camera'}
-          </Button>
-        </>
-      )}
+
 
       {/* Full-screen preview */}
       {previewPhoto && (

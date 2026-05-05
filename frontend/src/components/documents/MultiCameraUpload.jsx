@@ -373,18 +373,7 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
                 </div>
               )}
 
-              {/* Open camera button — only when no photos yet */}
-              {photos.length === 0 && (
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  disabled={isUploading}
-                  className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-50 text-blue-600 font-semibold text-sm rounded-xl transition-all disabled:opacity-50"
-                >
-                  <Camera size={18} />
-                  Open Camera
-                </button>
-              )}
+
 
               {/* Upload settings — only if photos exist */}
               {photos.length > 0 && (
