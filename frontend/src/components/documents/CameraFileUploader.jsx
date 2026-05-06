@@ -182,7 +182,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': [], 'application/pdf': [] },
+    accept: { 'image/jpeg': [], 'image/png': [], 'image/*': [], 'application/pdf': [] },
     maxFiles: (isLegacySingle || single) ? 1 : 10,
     disabled: disabled || compressing || mode === 'camera',
   });
@@ -327,7 +327,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           (disabled || compressing) && 'pointer-events-none opacity-60'
         )}
       >
-        <input {...getInputProps()} capture="environment" />
+        <input {...getInputProps()} />
         {compressing ? (
           <div className="space-y-2">
             <div className="w-7 h-7 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />

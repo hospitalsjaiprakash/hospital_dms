@@ -262,7 +262,7 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/*"
           multiple
           onChange={handleFileSelect}
         />
