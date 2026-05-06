@@ -6,7 +6,7 @@ import { Button, Input } from '../components/common';
 import { Eye, EyeOff, User, Lock, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AuthLayout from '../components/layout/AuthLayout';
-import JPHBUILD from '../assets/JPHBUILD.jpeg';
+import JPHBUILD from '../assets/JPHBUILD.webp';
 
 export default function LoginPage() {
   const { login } = useAuth();

@@ -1,7 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 import { Loader2 } from 'lucide-react';
-import logo from '../../assets/logo.png';
+import logo from '../../assets/logo.webp';
 
 // ── Button ─────────────────────────────────────────────────────────────────────
 export function Button({ children, variant = 'primary', size = 'md', loading, disabled, className, ...props }) {

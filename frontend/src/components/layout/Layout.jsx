@@ -6,7 +6,7 @@ import {
   ChevronRight, ClipboardList, Shield, Hospital
 } from 'lucide-react';
 import clsx from 'clsx';
-import logo from '../../assets/logo.png';
+import logo from '../../assets/logo.webp';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'hod', 'pcc'] },
@@ -135,8 +135,8 @@ export default function Layout() {
             <div className="flex items-center gap-2">
               <img src={logo} alt="Logo" className="w-8 h-8 rounded-full object-contain" />
               <div className="min-w-0">
-                <h1 className="font-bold text-gray-800 text-sm leading-tight uppercase tracking-widest">JPHRC</h1>
-                <p className="text-gray-500 text-[8px] uppercase tracking-widest">ROURKELA</p>
+                <h1 className="font-bold text-blue-700 text-sm leading-tight uppercase tracking-widest">JPHRC</h1>
+                <p className="text-blue-600 text-[8px] uppercase tracking-widest">ROURKELA</p>
               </div>
             </div>
           </div>
