@@ -182,7 +182,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/jpeg': [], 'image/png': [], 'application/pdf': [] },
+    accept: { 'image/*': [], 'application/pdf': [] },
     maxFiles: (isLegacySingle || single) ? 1 : 10,
     disabled: disabled || compressing || mode === 'camera',
   });
@@ -341,7 +341,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             <p className="text-sm font-medium text-gray-700">
               {isDragActive ? 'Drop file here' : files.length > 0 ? 'Drop more files here' : 'Drag & drop or click to select'}
             </p>
-            <p className="text-xs text-gray-400">JPG, PNG, PDF · Max 1MB each</p>
+            <p className="text-xs text-gray-400">All image formats, PDF · Max 1MB each</p>
           </div>
         )}
       </div>
