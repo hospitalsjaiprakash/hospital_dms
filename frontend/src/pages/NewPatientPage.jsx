@@ -94,9 +94,14 @@ export default function NewPatientPage() {
             </div>
 
             <Input
-              label="UHID" placeholder="UHID-2024-001" required icon={Hash}
+              label="UHID" placeholder="JPH20261234" required icon={Hash}
               error={errors.uhid?.message}
-              {...register('uhid', { required: 'UHID is required', minLength: { value: 3, message: 'Min 3 characters' } })}
+              {...register('uhid', { 
+                required: 'UHID is required', 
+                minLength: { value: 11, message: 'UHID must be exactly 11 characters' },
+                maxLength: { value: 11, message: 'UHID must be exactly 11 characters' },
+                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Please type valid UHID' }
+              })}
             />
 
             <Input

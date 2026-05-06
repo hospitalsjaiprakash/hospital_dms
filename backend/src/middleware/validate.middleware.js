@@ -30,7 +30,11 @@ const schemas = {
   }),
 
   createPatient: Joi.object({
-    uhid: Joi.string().min(3).max(50).required(),
+    uhid: Joi.string().length(11).uppercase().required().messages({
+      'string.length': 'UHID must be exactly 11 characters',
+      'string.pattern.base': 'UHID must contain only letters and numbers',
+      'any.required': 'UHID is required'
+    }),
     name: Joi.string().min(2).max(200).required(),
     admission_date: Joi.date().iso().max('now').required(),
     notes: Joi.string().max(500).optional().allow(''),
@@ -38,6 +42,10 @@ const schemas = {
 
   updatePatient: Joi.object({
     name: Joi.string().min(2).max(200).optional(),
+    uhid: Joi.string().length(11).uppercase().optional().messages({
+      'string.length': 'UHID must be exactly 11 characters',
+      'string.pattern.base': 'UHID must contain only letters and numbers'
+    }),
     hospital_status: Joi.string().valid('active', 'discharged').optional(),
     settlement_status: Joi.string().valid('pending', 'completed').optional(),
     discharge_date: Joi.date().iso().optional().allow(null),

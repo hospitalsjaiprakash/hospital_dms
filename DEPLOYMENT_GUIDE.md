@@ -30,6 +30,10 @@ DATABASE_URL=postgresql://username:password@host:port/database
 # JWT
 JWT_SECRET=your-super-secure-jwt-secret-here
 
+# Admin Credentials (⚠️  IMPORTANT - Change these!)
+ADMIN_EMPLOYEE_ID=your_secure_admin_id
+ADMIN_PASSWORD=your_secure_admin_password
+
 # CORS (for frontend)
 CORS_ORIGIN=https://your-frontend-domain.netlify.app
 
@@ -44,6 +48,8 @@ RATE_LIMIT_MAX=100
 # File Upload
 MAX_FILE_SIZE=10485760
 ```
+
+⚠️ **SECURITY WARNING**: Never use default credentials in production. Change `ADMIN_EMPLOYEE_ID` and `ADMIN_PASSWORD` to secure values.
 
 #### Render Configuration
 - **Service Type**: Web Service
@@ -118,8 +124,10 @@ After deploying backend, run migrations:
 ```bash
 # In Render shell or locally connected to production DB
 npm run migrate
-npm run seed  # Optional: seed with sample data
+npm run seed  # Creates admin user with credentials from environment variables
 ```
+
+**Important**: Make sure `ADMIN_EMPLOYEE_ID` and `ADMIN_PASSWORD` are set in your environment BEFORE running the seed script.
 
 ## 🌐 Domain Configuration
 
@@ -131,12 +139,16 @@ npm run seed  # Optional: seed with sample data
 
 ## 🔒 Security Checklist
 
-- [ ] JWT_SECRET is strong and unique
-- [ ] Database credentials are secure
+- [ ] JWT_SECRET is strong and unique (32+ characters)
+- [ ] Database credentials are secure and not in code
+- [ ] ADMIN_EMPLOYEE_ID and ADMIN_PASSWORD are set (not default values)
+- [ ] .env file is NOT committed to Git
 - [ ] CORS_ORIGIN is set to your frontend domain only
 - [ ] Rate limiting is configured appropriately
 - [ ] HTTPS is enabled (automatic on Render/Netlify)
 - [ ] File upload limits are set appropriately
+
+**For detailed security setup, see [SECURITY.md](./SECURITY.md)**
 
 ## 🧪 Testing Multi-User Access
 
