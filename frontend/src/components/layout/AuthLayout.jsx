@@ -32,8 +32,8 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
 
       {/* Mobile Branding (Always at top, outside the card) */}
       <div className="lg:hidden mb-8 text-center animate-fade-in w-full max-w-[280px] z-20">
-        <Brand logoSize="md" className="!text-gray-900" />
-        <div className="mt-4 h-px w-16 mx-auto bg-gradient-to-r from-transparent via-gray-400 to-transparent" />
+        <Brand logoSize="md" className="!text-blue-700" />
+        <div className="mt-4 h-px w-16 mx-auto bg-gradient-to-r from-transparent via-blue-400 to-transparent" />
       </div>
 
       <motion.div 

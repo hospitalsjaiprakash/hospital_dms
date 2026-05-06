@@ -211,7 +211,7 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
       </div>
       <div className="space-y-1">
         <h1 className="text-[10px] lg:text-[13px] font-black leading-tight uppercase tracking-[0.2em] transition-colors whitespace-nowrap">
-          JAIPRAKASH HOSPITAL <span className="text-white drop-shadow-md brightness-125">&</span> RESEARCH CENTER
+          JAIPRAKASH HOSPITAL <span className="text-inherit drop-shadow-md lg:text-white lg:brightness-125">&</span> RESEARCH CENTER
         </h1>
         {showSubtitle && (
           <div className="flex items-center justify-center gap-2">
