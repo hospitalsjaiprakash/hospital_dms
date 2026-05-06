@@ -51,6 +51,7 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
 
   // Keep stream in a ref so the video ref-callback can always access it
   const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // ── Clean up stream on unmount ─────────────────────────────────────────────
   useEffect(() => {
@@ -176,6 +177,32 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
     setPreviewPhoto(null);
   };
 
+  // ── Handle file selection from camera apps ────────────────────────────────────
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    setCompressing(true);
+    try {
+      for (const file of files) {
+        const compressed = await imageCompression(file, {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+        });
+        const preview = URL.createObjectURL(compressed);
+        setPhotos(prev => [...prev, { file: compressed, preview }]);
+      }
+      toast.success(`${files.length} photo${files.length !== 1 ? 's' : ''} added!`);
+    } catch (err) {
+      toast.error('Failed to process image');
+      console.error('File processing error:', err);
+    } finally {
+      setCompressing(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
   // ── Upload all photos ──────────────────────────────────────────────────────
   const handleUploadAll = async () => {
     if (photos.length === 0) { toast.error('No photos to upload'); return; }
@@ -229,6 +256,16 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={!isUploading && !cameraActive ? handleClose : undefined} />
 
       <div className={`relative bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden ${cameraActive ? 'sm:w-full sm:h-screen sm:rounded-0' : ''}`}>
+
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*"
+          multiple
+          onChange={handleFileSelect}
+        />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
@@ -327,13 +364,16 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
           {!cameraActive && (
             <div className="p-5 space-y-5">
               {photos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center py-10 gap-3 text-center cursor-pointer hover:bg-blue-50 rounded-xl transition-colors p-4"
+                >
                   <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
                     <Camera size={28} className="text-blue-400" />
                   </div>
                   <p className="text-gray-600 font-semibold text-sm">No photos yet</p>
                   <p className="text-gray-400 text-xs max-w-xs">
-                    Open the camera to capture multiple photos. Each will be uploaded separately.
+                    Select photos from your camera or device. All installed camera apps are available.
                   </p>
                 </div>
               ) : (
@@ -359,9 +399,9 @@ export default function MultiCameraUpload({ patientId, open, onClose }) {
                     {!isUploading && (
                       <button
                         type="button"
-                        onClick={startCamera}
+                        onClick={() => fileInputRef.current?.click()}
                         className="w-20 h-20 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50 hover:bg-blue-100 flex flex-col items-center justify-center gap-1 text-blue-500 hover:text-blue-700 transition-all active:scale-95"
-                        title="Take more photos"
+                        title="Add more photos"
                       >
                         <div className="w-7 h-7 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center text-white text-lg font-bold leading-none">
                           +
