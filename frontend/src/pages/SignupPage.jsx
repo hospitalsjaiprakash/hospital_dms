@@ -83,8 +83,7 @@ export default function SignupPage() {
                 className="w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 text-sm placeholder-gray-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white outline-none hover:border-gray-300 transition-all shadow-sm"
                 {...register('password', {
                   required: 'Password is required',
-                  minLength: { value: 8, message: 'Min 8 characters' },
-                  pattern: { value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, message: 'Need uppercase, lowercase, number' }
+                  minLength: { value: 6, message: 'Min 6 characters' }
                 })}
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition-all">

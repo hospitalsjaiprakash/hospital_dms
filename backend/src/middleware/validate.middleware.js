@@ -16,8 +16,7 @@ const validate = (schema, source = 'body') => {
 // Schemas
 const schemas = {
   signup: Joi.object({
-    password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required()
-      .messages({ 'string.pattern.base': 'Password must contain uppercase, lowercase, and number' }),
+    password: Joi.string().min(6).required(),
     name: Joi.string().min(2).max(200).required(),
     employee_id: Joi.string().min(3).max(50).required(),
     role: Joi.string().valid('pcc', 'hod').required(),
@@ -68,7 +67,7 @@ const schemas = {
     employee_id: Joi.string().min(3).max(50).required(),
     role: Joi.string().valid('pcc', 'hod', 'admin').required(),
     department: Joi.string().max(100).optional().allow(''),
-    password: Joi.string().min(8).required(),
+    password: Joi.string().min(6).required(),
   }),
 };
 
