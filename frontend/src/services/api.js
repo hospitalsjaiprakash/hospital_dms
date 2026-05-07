@@ -1,9 +1,30 @@
 import axios from 'axios';
 
-// Vite uses import.meta.env, not process.env
-const BASE_URL = import.meta.env.VITE_API_URL 
-  ? `${import.meta.env.VITE_API_URL}/api` 
-  : 'https://hospital-dms-pyhq.onrender.com/api';
+// Safe check for environment variables (supports both CRA and Vite)
+const getEnv = (name) => {
+  try {
+    // Try Vite style
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[name]) {
+      return import.meta.env[name];
+    }
+  } catch (e) {}
+  
+  try {
+    // Try CRA/Webpack style
+    const craName = name.startsWith('VITE_') ? `REACT_APP_${name.slice(5)}` : name;
+    if (typeof process !== 'undefined' && process.env && process.env[craName]) {
+      return process.env[craName];
+    }
+    if (typeof process !== 'undefined' && process.env && process.env[name]) {
+      return process.env[name];
+    }
+  } catch (e) {}
+  
+  return null;
+};
+
+const VITE_URL = getEnv('VITE_API_URL');
+const BASE_URL = VITE_URL ? `${VITE_URL}/api` : 'https://hospital-dms-pyhq.onrender.com/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
