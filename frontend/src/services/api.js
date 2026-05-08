@@ -34,8 +34,8 @@ const api = axios.create({
 // Request interceptor - attach token
 api.interceptors.request.use(
   (config) => {
-    // Check sessionStorage first (tab-specific), then localStorage
-    const token = sessionStorage.getItem('hms_token') || localStorage.getItem('hms_token');
+    // Check sessionStorage (tab-specific)
+    const token = sessionStorage.getItem('hms_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
@@ -49,8 +49,6 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       sessionStorage.removeItem('hms_token');
       sessionStorage.removeItem('hms_user');
-      localStorage.removeItem('hms_token');
-      localStorage.removeItem('hms_user');
       window.location.href = '/login';
     }
     const message = error.response?.data?.message || 'An error occurred';

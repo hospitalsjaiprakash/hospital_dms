@@ -6,7 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      // Only read from sessionStorage (tab-specific), NOT localStorage
+      // Only read from sessionStorage (tab-specific)
       // This ensures new tabs show login, not previous user's dashboard
       const stored = sessionStorage.getItem('hms_user');
       return stored ? JSON.parse(stored) : null;
@@ -16,19 +16,13 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Check sessionStorage first (same tab session)
-    let token = sessionStorage.getItem('hms_token');
-    
-    // If no sessionStorage token, check localStorage (browser restart scenario)
-    if (!token) {
-      token = localStorage.getItem('hms_token');
-    }
+    const token = sessionStorage.getItem('hms_token');
     
     if (token) {
       authApi.getMe()
         .then((res) => {
           setUser(res.data);
           sessionStorage.setItem('hms_user', JSON.stringify(res.data));
-          localStorage.setItem('hms_user', JSON.stringify(res.data));
         })
         .catch(() => { logout(); })
         .finally(() => setLoading(false));
@@ -40,11 +34,9 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (credentials) => {
     const res = await authApi.login(credentials);
     const { user, token } = res.data;
-    // Store in sessionStorage (tab-specific) AND localStorage (persistent)
+    // Store in sessionStorage (tab-specific)
     sessionStorage.setItem('hms_token', token);
     sessionStorage.setItem('hms_user', JSON.stringify(user));
-    localStorage.setItem('hms_token', token);
-    localStorage.setItem('hms_user', JSON.stringify(user));
     setUser(user);
     return user;
   }, []);
@@ -57,8 +49,6 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     sessionStorage.removeItem('hms_token');
     sessionStorage.removeItem('hms_user');
-    localStorage.removeItem('hms_token');
-    localStorage.removeItem('hms_user');
     setUser(null);
   }, []);
 

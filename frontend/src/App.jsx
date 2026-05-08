@@ -51,7 +51,6 @@ function PublicRoute({ children }) {
       </div>
     </div>
   );
-  if (user) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
