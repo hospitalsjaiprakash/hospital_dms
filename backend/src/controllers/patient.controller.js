@@ -244,15 +244,10 @@ const exportPatientsExcel = async (req, res) => {
     { header: 'Discharge Date', key: 'discharge', width: 15 },
     { header: 'Documents Count', key: 'docCount', width: 15 },
     { header: 'Uploaded By', key: 'uploadedBy', width: 30 },
-    { header: 'PMJAY Status', key: 'pmjay', width: 25 },
-    { header: 'Patient Profile Link', key: 'profileLink', width: 45 },
-    { header: 'Download Docs Link', key: 'downloadLink', width: 45 }
+    { header: 'PMJAY Status', key: 'pmjay', width: 25 }
   ];
 
   worksheet.getRow(1).font = { bold: true };
-
-  const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:3000';
-  const backendUrl = `${req.protocol}://${req.get('host')}`;
 
   patientsRes.rows.forEach((p) => {
     let pmjayStatus = p.settlement_status === 'completed' 
@@ -261,9 +256,6 @@ const exportPatientsExcel = async (req, res) => {
 
     let admittedStr = p.admission_date ? new Date(p.admission_date).toISOString().split('T')[0] : '';
     let dischargeStr = p.discharge_date ? new Date(p.discharge_date).toISOString().split('T')[0] : '';
-    
-    const profileLink = `${frontendUrl}/patients/${p.id}`;
-    const downloadLink = `${backendUrl}/api/patients/${p.id}/documents/export`;
 
     worksheet.addRow({
       name: p.name,
@@ -273,9 +265,7 @@ const exportPatientsExcel = async (req, res) => {
       discharge: p.hospital_status === 'discharged' ? dischargeStr : '-',
       docCount: p.document_count || 0,
       uploadedBy: p.photographers || '-',
-      pmjay: pmjayStatus,
-      profileLink: { text: profileLink, hyperlink: profileLink },
-      downloadLink: { text: 'Download ZIP', hyperlink: downloadLink }
+      pmjay: pmjayStatus
     });
   });
 
