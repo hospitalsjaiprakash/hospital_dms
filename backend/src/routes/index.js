@@ -39,6 +39,7 @@ router.get('/auth/me', authenticate, authCtrl.getMe);
 // ── Patients ─────────────────────────────────────────────────────────────────
 router.get('/patients/stats', authenticate, patientCtrl.getPatientStats);
 router.get('/patients/upload-history', authenticate, patientCtrl.getUploadHistory);
+router.get('/patients/export', authenticate, patientCtrl.exportPatientsExcel);
 router.get('/patients', authenticate, patientCtrl.getPatients);
 router.post('/patients', authenticate, validate(schemas.createPatient), patientCtrl.createPatient);
 router.get('/patients/:id', authenticate, patientCtrl.getPatient);

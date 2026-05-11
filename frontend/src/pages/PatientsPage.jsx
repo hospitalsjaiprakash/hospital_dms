@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { patientApi } from '../services/api';
 import { Card, Badge, Button, Input, Select, Spinner, EmptyState, Pagination } from '../components/common';
-import { Search, Plus, Users, Filter, ChevronRight } from 'lucide-react';
+import { Search, Plus, Users, Filter, ChevronRight, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { useDebounce } from '../hooks/useDebounce';
 
@@ -18,6 +18,7 @@ export default function PatientsPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState(urlTab);
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -45,6 +46,31 @@ export default function PatientsPage() {
     { keepPreviousData: true }
   );
 
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const params = {
+        search: debouncedSearch,
+        hospital_status: getHospitalStatus(),
+        settlement_status: getSettlementStatus()
+      };
+      const blob = await patientApi.exportExcel(params);
+      
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'patients_export.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (error) {
+      console.error('Export failed:', error);
+      // Optional: Add toast notification here if available
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const patients = data?.data || [];
   const pagination = data?.pagination;
 
@@ -69,13 +95,26 @@ export default function PatientsPage() {
             {isFetching && !isLoading && <span className="ml-2 text-blue-400">Updating...</span>}
           </p>
         </div>
-        <Link to="/patients/new">
-          <Button size="sm" className="w-full sm:w-auto">
-            <Plus size={15} />
-            <span className="hidden sm:inline">New Patient</span>
-            <span className="sm:hidden">New Patient</span>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="w-full sm:w-auto"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            {isExporting ? <Spinner size="sm" className="mr-2" /> : <Download size={15} />}
+            <span className="hidden sm:inline ml-2">{isExporting ? 'Exporting...' : 'Export'}</span>
+            <span className="sm:hidden ml-2">{isExporting ? 'Exporting...' : 'Export'}</span>
           </Button>
-        </Link>
+          <Link to="/patients/new">
+            <Button size="sm" className="w-full sm:w-auto">
+              <Plus size={15} />
+              <span className="hidden sm:inline">New Patient</span>
+              <span className="sm:hidden">New Patient</span>
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Tabs */}

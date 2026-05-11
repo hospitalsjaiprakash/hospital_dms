@@ -1,6 +1,7 @@
 const db = require('../db');
 const { sendSuccess, sendError, sendPaginated, getPaginationParams } = require('../utils/response');
 const { auditLog, ACTIONS } = require('../services/audit.service');
+const ExcelJS = require('exceljs');
 
 const createPatient = async (req, res) => {
   const { uhid, name, admission_date, notes } = req.body;
@@ -202,4 +203,87 @@ const getUploadHistory = async (req, res) => {
   return sendSuccess(res, { hourly, monthly, yearly });
 };
 
-module.exports = { createPatient, getPatients, getPatient, updatePatient, getPatientStats, getUploadHistory };
+const exportPatientsExcel = async (req, res) => {
+  const { search, hospital_status, settlement_status } = req.query;
+
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+
+  if (search) {
+    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
+  }
+  if (hospital_status) { conditions.push(`p.hospital_status = $${idx++}`); params.push(hospital_status); }
+  if (settlement_status) { conditions.push(`p.settlement_status = $${idx++}`); params.push(settlement_status); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const patientsRes = await db.query(
+    `SELECT p.*,
+      (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count,
+      (SELECT string_agg(DISTINCT u2.name, ', ') 
+       FROM documents d 
+       JOIN users u2 ON u2.id = d.uploaded_by 
+       WHERE d.patient_id = p.id AND d.is_deleted = false) as photographers
+     FROM patients p
+     ${where}
+     ORDER BY p.created_at DESC`,
+    params
+  );
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Patients');
+
+  worksheet.columns = [
+    { header: 'Patient Name', key: 'name', width: 25 },
+    { header: 'UHID Number', key: 'uhid', width: 20 },
+    { header: 'Admitted Date', key: 'admitted', width: 15 },
+    { header: 'Status', key: 'status', width: 15 },
+    { header: 'Discharge Date', key: 'discharge', width: 15 },
+    { header: 'Documents Count', key: 'docCount', width: 15 },
+    { header: 'Uploaded By', key: 'uploadedBy', width: 30 },
+    { header: 'PMJAY Status', key: 'pmjay', width: 25 },
+    { header: 'Patient Profile Link', key: 'profileLink', width: 45 },
+    { header: 'Download Docs Link', key: 'downloadLink', width: 45 }
+  ];
+
+  worksheet.getRow(1).font = { bold: true };
+
+  const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:3000';
+  const backendUrl = `${req.protocol}://${req.get('host')}`;
+
+  patientsRes.rows.forEach((p) => {
+    let pmjayStatus = p.settlement_status === 'completed' 
+      ? `Completed (${new Date(p.updated_at).toISOString().split('T')[0]})` 
+      : 'Pending';
+
+    let admittedStr = p.admission_date ? new Date(p.admission_date).toISOString().split('T')[0] : '';
+    let dischargeStr = p.discharge_date ? new Date(p.discharge_date).toISOString().split('T')[0] : '';
+    
+    const profileLink = `${frontendUrl}/patients/${p.id}`;
+    const downloadLink = `${backendUrl}/api/patients/${p.id}/documents/export`;
+
+    worksheet.addRow({
+      name: p.name,
+      uhid: p.uhid,
+      admitted: admittedStr,
+      status: p.hospital_status === 'active' ? 'Active' : 'Discharged',
+      discharge: p.hospital_status === 'discharged' ? dischargeStr : '-',
+      docCount: p.document_count || 0,
+      uploadedBy: p.photographers || '-',
+      pmjay: pmjayStatus,
+      profileLink: { text: profileLink, hyperlink: profileLink },
+      downloadLink: { text: 'Download ZIP', hyperlink: downloadLink }
+    });
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="patients_export.xlsx"');
+
+  await workbook.xlsx.write(res);
+  res.end();
+};
+
+module.exports = { createPatient, getPatients, getPatient, updatePatient, getPatientStats, getUploadHistory, exportPatientsExcel };

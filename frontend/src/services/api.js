@@ -71,6 +71,7 @@ export const patientApi = {
   update: (id, data) => api.patch(`/patients/${id}`, data),
   getStats: () => api.get('/patients/stats'),
   getUploadHistory: () => api.get('/patients/upload-history'),
+  exportExcel: (params) => api.get('/patients/export', { params, responseType: 'blob' }),
 };
 
 // ── Documents ─────────────────────────────────────────────────────────────────
