@@ -369,12 +369,55 @@ const getAllDocuments = async (req, res) => {
   return sendPaginated(res, docs, parseInt(countRes.rows[0].count), page, limit);
 };
 
+/**
+ * Bulk delete documents
+ */
+const bulkDeleteDocuments = async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return sendError(res, 'No document IDs provided', 400);
+  }
+
+  const results = await db.query(
+    `SELECT d.*, u.role as uploader_role FROM documents d
+     JOIN users u ON u.id = d.uploaded_by
+     WHERE d.id = ANY($1) AND d.is_deleted = false`,
+    [ids]
+  );
+
+  const docs = results.rows;
+  if (docs.length === 0) return sendError(res, 'No valid documents found to delete', 404);
+
+  // Filter out documents the user cannot modify
+  const deletableDocs = docs.filter(doc => canModifyDocument(req.user, doc.uploaded_by, doc.uploader_role));
+  const deletableIds = deletableDocs.map(doc => doc.id);
+
+  if (deletableIds.length === 0) {
+    return sendError(res, 'You do not have permission to delete any of the selected documents', 403);
+  }
+
+  await db.withTransaction(async (client) => {
+    await client.query(
+      `UPDATE documents SET is_deleted = true, deleted_by = $1, deleted_at = NOW() WHERE id = ANY($2)`,
+      [req.user.id, deletableIds]
+    );
+    for (const doc of deletableDocs) {
+      await deleteFromS3(doc.s3_key).catch(err => console.error(`Failed to delete S3 object ${doc.s3_key}:`, err));
+    }
+  });
+
+  await auditLog(ACTIONS.DOCUMENT_DELETE, 'document')(req, null, { count: deletableIds.length }, { deleted_ids: deletableIds });
+
+  return sendSuccess(res, { deleted_count: deletableIds.length }, `Successfully deleted ${deletableIds.length} document(s)`);
+};
+
 module.exports = { 
   uploadDocument, 
   getPatientDocuments, 
   getDocument, 
   updateDocument, 
   deleteDocument, 
+  bulkDeleteDocuments,
   exportPatientDocuments,
   getAllDocuments
 };

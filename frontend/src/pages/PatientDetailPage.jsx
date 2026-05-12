@@ -12,8 +12,9 @@ import {
   ArrowLeft, Edit2, Upload, Download, FileText, Image,
   Trash2, Eye, Calendar, Hash, User,
   CheckCircle, Clock, Activity, AlertCircle, MoreVertical,
-  File, X, ZoomIn
+  File, X, ZoomIn, Check
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -175,7 +176,7 @@ function EditPatientModal({ patient, open, onClose }) {
 
 
 // ── Document Card ──────────────────────────────────────────────────────────
-function DocumentCard({ doc, onDelete, canDelete, onView }) {
+function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }) {
   const isImage = doc.mime_type?.startsWith('image/');
   const fileUrl = doc.presigned_url
     ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
@@ -204,8 +205,13 @@ function DocumentCard({ doc, onDelete, canDelete, onView }) {
     }
   };
 
+  const handleSelect = (e) => {
+    e.stopPropagation();
+    onSelect(doc.id);
+  };
+
   return (
-    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden hover:shadow-card-hover transition-shadow group">
+    <div className={clsx("bg-white border rounded-xl overflow-hidden hover:shadow-card-hover transition-all group", isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-100')}>
       <div className="h-32 bg-gray-50 flex items-center justify-center relative overflow-hidden cursor-pointer" onClick={() => onView(doc)}>
         {isImage && fileUrl ? (
           <img
@@ -222,6 +228,27 @@ function DocumentCard({ doc, onDelete, canDelete, onView }) {
             <span className="text-xs text-gray-400 font-medium">PDF</span>
           </div>
         )}
+        {/* Checkbox - Modern Browser Style */}
+        <div className="absolute top-2 left-2 z-20">
+          <div 
+            className={clsx(
+              "flex items-center justify-center p-1.5 rounded-lg shadow-sm border transition-all",
+              isSelected ? "bg-blue-600 border-blue-600" : "bg-white/80 backdrop-blur-sm border-gray-200 hover:bg-white"
+            )}
+            onClick={(e) => { e.stopPropagation(); onSelect(doc.id); }}
+          >
+            <input
+              type="checkbox"
+              className={clsx(
+                "w-4 h-4 rounded border-gray-300 focus:ring-blue-500 cursor-pointer",
+                isSelected ? "accent-white" : "text-blue-600"
+              )}
+              checked={isSelected}
+              readOnly
+            />
+          </div>
+        </div>
+        {/* Hover Actions */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
           <button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 bg-white rounded-full shadow-md hover:bg-blue-50 transition-colors">
             <Eye size={14} className="text-blue-600" />
@@ -277,6 +304,10 @@ export default function PatientDetailPage() {
   const [viewDoc, setViewDoc] = useState(null);
   const [activeDocType, setActiveDocType] = useState('all');
   const [docPage, setDocPage] = useState(1);
+  const [selectedDocs, setSelectedDocs] = useState(new Map());
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   const { data: patientData, isLoading: patientLoading } = useQuery(
     ['patient', id],
@@ -305,21 +336,131 @@ export default function PatientDetailPage() {
     }
   );
 
-  const handleExport = async () => {
+  const { mutate: bulkDeleteDocuments, isLoading: bulkDeleting } = useMutation(
+    (ids) => documentApi.bulkDelete(ids),
+    {
+      onSuccess: (res) => {
+        queryClient.invalidateQueries(['documents', id]);
+        toast.success(res.message || 'Documents deleted');
+        setSelectedDocs(new Map());
+        setShowBulkDeleteModal(false);
+      },
+      onError: (err) => toast.error(err.message),
+    }
+  );
+
+  const handleToggleDocSelect = (doc) => {
+    setSelectedDocs(prev => {
+      const newSelected = new Map(prev);
+      if (newSelected.has(doc.id)) {
+        newSelected.delete(doc.id);
+      } else {
+        newSelected.set(doc.id, doc);
+      }
+      return newSelected;
+    });
+  };
+
+  const handleSelectAllDocs = () => {
+    const allCurrentSelected = docs.every(doc => selectedDocs.has(doc.id));
+    if (allCurrentSelected && docs.length > 0) {
+      setSelectedDocs(prev => {
+        const newSelected = new Map(prev);
+        docs.forEach(doc => newSelected.delete(doc.id));
+        return newSelected;
+      });
+    } else {
+      setSelectedDocs(prev => {
+        const newSelected = new Map(prev);
+        docs.forEach(doc => newSelected.set(doc.id, doc));
+        return newSelected;
+      });
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedDocs.size === 0) {
+      const allDocs = docsData?.data || [];
+      if (allDocs.length === 0) {
+        toast.error('No documents to download');
+        return;
+      }
+      setSelectedDocs(new Map(allDocs.map(doc => [doc.id, doc])));
+      return;
+    }
+
     try {
-      toast.loading('Preparing ZIP download...');
-      const blob = await documentApi.exportZip(id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${patient.uhid}_documents.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      setIsDownloading(true);
+      toast.loading('Preparing download...');
+
+      const selectedDocObjs = Array.from(selectedDocs.values());
+
+      if (selectedDocObjs.length === 1) {
+        // Single file download
+        const doc = selectedDocObjs[0];
+        const fileUrl = doc.presigned_url
+          ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
+          : null;
+
+        if (!fileUrl) {
+          toast.error('File not available');
+          return;
+        }
+
+        const response = await fetch(fileUrl);
+        const blob = await response.blob();
+        const isImage = doc.mime_type?.startsWith('image/');
+        const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
+        const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
+          ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
+          : doc.file_name;
+        const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Multiple files as ZIP
+        const zip = new JSZip();
+
+        for (const doc of selectedDocObjs) {
+          const fileUrl = doc.presigned_url
+            ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
+            : null;
+
+          if (fileUrl) {
+            const response = await fetch(fileUrl);
+            const blob = await response.blob();
+            const isImage = doc.mime_type?.startsWith('image/');
+            const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
+            const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
+              ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
+              : doc.file_name;
+            const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
+            zip.file(name, blob);
+          }
+        }
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${patient.uhid}_documents.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
       toast.dismiss();
-      toast.success('Download started!');
+      toast.success(`Downloaded ${selectedDocObjs.length} file${selectedDocObjs.length > 1 ? 's' : ''}!`);
+      setSelectedDocs(new Map());
     } catch (err) {
       toast.dismiss();
-      toast.error(err.message || 'Export failed');
+      toast.error(err.message || 'Download failed');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -352,14 +493,17 @@ export default function PatientDetailPage() {
           <p className="text-gray-400 text-sm">{patient.uhid}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {selectedDocs.size > 0 && (
+            <Button variant="danger" size="sm" onClick={() => setShowBulkDeleteModal(true)}>
+              <Trash2 size={13} /> Delete ({selectedDocs.size})
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
             <Edit2 size={13} /> Edit
           </Button>
-          {docs.length > 0 && (
-            <Button variant="secondary" size="sm" onClick={handleExport}>
-              <Download size={13} /> Export ZIP
-            </Button>
-          )}
+          <Button size="sm" onClick={handleDownloadSelected} loading={isDownloading} variant={selectedDocs.size > 0 ? "primary" : "secondary"}>
+            <Download size={13} /> {selectedDocs.size === 0 ? 'Download All' : `Download ${selectedDocs.size} File${selectedDocs.size > 1 ? 's' : ''}`}
+          </Button>
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)}>
               <Upload size={13} /> Upload Doc
@@ -444,7 +588,20 @@ export default function PatientDetailPage() {
 
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-gray-800">Documents</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-bold text-gray-800">Documents</h2>
+            {docs.length > 0 && (
+              <label className="flex items-center gap-2 px-2 py-1 bg-gray-50 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  checked={docs.length > 0 && selectedDocs.size === docs.length}
+                  onChange={handleSelectAllDocs}
+                />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Select All</span>
+              </label>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-2 flex-wrap mb-4">
@@ -485,6 +642,8 @@ export default function PatientDetailPage() {
                 canDelete={canEdit(doc.uploaded_by, doc.uploader_role)}
                 onDelete={setDeleteDoc}
                 onView={setViewDoc}
+                isSelected={selectedDocs.has(doc.id)}
+                onSelect={() => handleToggleDocSelect(doc)}
               />
             ))}
           </div>
@@ -517,6 +676,24 @@ export default function PatientDetailPage() {
             <Button variant="secondary" onClick={() => setDeleteDoc(null)} className="flex-1">Cancel</Button>
             <Button variant="danger" loading={deleting} onClick={() => deleteDocument(deleteDoc.id)} className="flex-1">
               Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={showBulkDeleteModal} onClose={() => setShowBulkDeleteModal(false)} title="Delete Multiple Documents" maxWidth="max-w-sm">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800">Delete {selectedDocs.size} documents?</p>
+              <p className="text-xs text-red-600 mt-1">This action cannot be undone and will remove all selected files from the system.</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setShowBulkDeleteModal(false)} className="flex-1">Cancel</Button>
+            <Button variant="danger" loading={bulkDeleting} onClick={() => bulkDeleteDocuments(Array.from(selectedDocs.keys()))} className="flex-1">
+              Delete All
             </Button>
           </div>
         </div>

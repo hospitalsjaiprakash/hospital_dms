@@ -66,6 +66,7 @@ router.patch(
   documentCtrl.updateDocument
 );
 router.delete('/documents/:id', authenticate, documentCtrl.deleteDocument);
+router.post('/documents/bulk-delete', authenticate, documentCtrl.bulkDeleteDocuments);
 router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.exportPatientDocuments);
 
 // ── Users (Admin only) ──────────────────────────────────────────────────────

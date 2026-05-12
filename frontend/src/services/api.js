@@ -86,6 +86,7 @@ export const documentApi = {
   getOne: (id) => api.get(`/documents/${id}`),
   update: (id, data) => api.patch(`/documents/${id}`, data),
   delete: (id) => api.delete(`/documents/${id}`),
+  bulkDelete: (ids) => api.post('/documents/bulk-delete', { ids }),
   exportZip: (patientId) => api.get(`/patients/${patientId}/documents/export`, { responseType: 'blob' }),
 };
 
