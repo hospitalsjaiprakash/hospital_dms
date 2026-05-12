@@ -35,6 +35,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [gpsData, setGpsData] = useState(null);
+  const [fetchingGps, setFetchingGps] = useState(false);
 
   const streamRef = useRef(null);
 
@@ -109,11 +111,47 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     }
 
     setCapturing(true);
+    setFetchingGps(true);
     try {
+      // 1. Fetch Geolocation
+      const position = await new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          () => resolve(null), // Fallback if user denies or error
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      });
+      setFetchingGps(false);
+
       const canvas = document.createElement('canvas');
       canvas.width = videoEl.videoWidth;
       canvas.height = videoEl.videoHeight;
-      canvas.getContext('2d').drawImage(videoEl, 0, 0);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoEl, 0, 0);
+
+      // 2. Overlay GPS & Timestamp
+      const padding = canvas.width * 0.02;
+      const fontSize = Math.max(12, Math.floor(canvas.width * 0.025));
+      ctx.font = `${fontSize}px Inter, sans-serif`;
+      
+      const now = new Date();
+      const timeStr = now.toLocaleString();
+      const locStr = position 
+        ? `LAT: ${position.coords.latitude.toFixed(6)} LGN: ${position.coords.longitude.toFixed(6)}`
+        : 'Location: Unknown';
+      const hospitalStr = 'JPHRC ROURKELA';
+
+      // Draw background bar
+      const barHeight = fontSize * 3.5;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+
+      // Draw text
+      ctx.fillStyle = 'white';
+      ctx.fillText(hospitalStr, padding, canvas.height - barHeight + fontSize + 5);
+      ctx.font = `${fontSize * 0.8}px Inter, sans-serif`;
+      ctx.fillText(locStr, padding, canvas.height - barHeight + fontSize * 2.2 + 5);
+      ctx.fillText(timeStr, padding, canvas.height - barHeight + fontSize * 3.2 + 5);
 
       const blob = await new Promise((resolve, reject) =>
         canvas.toBlob(b => b ? resolve(b) : reject(new Error('Empty blob')), 'image/jpeg', 0.90)
@@ -215,10 +253,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           </div>
         )}
 
-        {(capturing || compressing) && (
-          <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+        {(capturing || compressing || fetchingGps) && (
+          <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
             <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-            {compressing ? 'Processing...' : 'Capturing...'}
+            {fetchingGps ? 'Getting Location...' : compressing ? 'Tagging & Saving...' : 'Capturing...'}
           </div>
         )}
 
@@ -318,11 +356,11 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Dropzone — always shown in multi mode */}
+      {/* Single upload area optimized for system picker */}
       <div
         {...getRootProps()}
         className={clsx(
-          'border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all',
+          'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all',
           isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50',
           (disabled || compressing) && 'pointer-events-none opacity-60'
         )}
@@ -330,18 +368,22 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         <input {...getInputProps()} />
         {compressing ? (
           <div className="space-y-2">
-            <div className="w-7 h-7 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />
-            <p className="text-sm text-blue-600 font-medium">Processing...</p>
+            <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />
+            <p className="text-sm text-blue-600 font-medium font-bold">Compressing & Preparing...</p>
           </div>
         ) : (
-          <div className="space-y-1">
-            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center mx-auto">
-              <Upload className="w-5 h-5 text-blue-500" />
+          <div className="space-y-3">
+            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-2">
+              <Camera className="w-8 h-8 text-blue-500" />
             </div>
-            <p className="text-sm font-medium text-gray-700">
-              {isDragActive ? 'Drop file here' : files.length > 0 ? 'Drop more files here' : 'Drag & drop or click to select'}
-            </p>
-            <p className="text-xs text-gray-400">All image formats, PDF · Max 1MB each</p>
+            <div className="space-y-1">
+              <p className="text-base font-bold text-gray-800">
+                {isDragActive ? 'Drop to upload' : 'Click to Take Photo or Select'}
+              </p>
+              <p className="text-xs text-gray-400 max-w-[200px] mx-auto leading-relaxed">
+                Choose <span className="font-bold text-gray-600">GPS Camera</span> from the list after clicking
+              </p>
+            </div>
           </div>
         )}
       </div>
