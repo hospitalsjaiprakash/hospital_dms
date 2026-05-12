@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { patientApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Card, Badge, Button, Spinner, EmptyState, Modal } from '../components/common';
+import { Card, Badge, Button, Select, Spinner, EmptyState, Modal } from '../components/common';
 import DocumentUpload from '../components/documents/DocumentUpload';
 import DocumentViewerModal from '../components/documents/DocumentViewerModal';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
@@ -492,7 +492,7 @@ export default function PatientDetailPage() {
           <h1 className="text-xl font-bold text-gray-900 truncate">{patient.name}</h1>
           <p className="text-gray-400 text-sm">{patient.uhid}</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="hidden sm:flex gap-2 flex-wrap">
           {selectedDocs.size > 0 && (
             <Button variant="danger" size="sm" onClick={() => setShowBulkDeleteModal(true)}>
               <Trash2 size={13} /> Delete ({selectedDocs.size})
@@ -507,6 +507,16 @@ export default function PatientDetailPage() {
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)}>
               <Upload size={13} /> Upload Doc
+            </Button>
+          )}
+        </div>
+        <div className="sm:hidden flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
+            <Edit2 size={13} /> Edit
+          </Button>
+          {canUpload && (
+            <Button size="sm" onClick={() => setUploadOpen(true)} className="flex-1">
+              <Upload size={13} /> Upload
             </Button>
           )}
         </div>
@@ -604,7 +614,8 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap mb-4">
+        {/* Desktop Categories */}
+        <div className="hidden sm:flex gap-2 flex-wrap mb-4">
           {['all', ...Object.keys(DOC_TYPE_LABELS)].map((type) => (
             <button
               key={type}
@@ -623,6 +634,19 @@ export default function PatientDetailPage() {
                   : DOC_TYPE_LABELS[type]}
             </button>
           ))}
+        </div>
+
+        {/* Mobile Category Dropdown */}
+        <div className="sm:hidden mb-4">
+          <Select 
+            value={activeDocType} 
+            onChange={(e) => { setActiveDocType(e.target.value); setDocPage(1); }}
+          >
+            <option value="all">All Documents ({docsPagination?.total ?? 0})</option>
+            {Object.entries(DOC_TYPE_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </Select>
         </div>
 
         {docsLoading ? (
@@ -698,6 +722,42 @@ export default function PatientDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Floating Bulk Actions Bar (Mobile only) */}
+      {selectedDocs.size > 0 && (
+        <div className="sm:hidden fixed bottom-[72px] left-4 right-4 z-50 bg-white rounded-2xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-4 animate-slide-up">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-gray-900">{selectedDocs.size} selected</span>
+              <button 
+                onClick={() => setSelectedDocs(new Map())}
+                className="text-[10px] font-bold text-blue-600 uppercase tracking-wider hover:text-blue-700 text-left"
+              >
+                Clear Selection
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="danger" 
+                size="sm" 
+                onClick={() => setShowBulkDeleteModal(true)}
+              >
+                <Trash2 size={14} />
+                <span>Delete</span>
+              </Button>
+              <Button 
+                variant="primary" 
+                size="sm" 
+                loading={isDownloading}
+                onClick={handleDownloadSelected}
+              >
+                <Download size={14} />
+                <span>Download</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
