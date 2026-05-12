@@ -149,10 +149,10 @@ export default function DashboardPage() {
             <StatCard title="Discharged" value={stats?.discharged_patients} icon={CheckCircle} color="purple" className="h-full" />
           </Link>
           <Link to="/patients?tab=pending" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
-            <StatCard title="Pending" value={stats?.pending_settlement} icon={Clock} color="red" className="h-full" />
+            <StatCard title="PMJAY Pending" value={stats?.pending_settlement} icon={Clock} color="red" className="h-full" />
           </Link>
           <Link to="/patients?tab=settled" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
-            <StatCard title="Settled" value={stats?.completed_settlement} icon={BadgeCheck} color="green" className="h-full" />
+            <StatCard title="PMJAY Settled" value={stats?.completed_settlement} icon={BadgeCheck} color="green" className="h-full" />
           </Link>
           <Link to="/documents" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Documents" value={stats?.total_documents} icon={FileText} color="blue" className="h-full" />
@@ -199,7 +199,7 @@ export default function DashboardPage() {
           <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
           <p className="text-sm text-red-800">
             <span className="font-semibold">{stats.pending_settlement} patients</span> have pending settlement.{' '}
-            <Link to="/patients?settlement_status=pending" className="underline font-medium hover:text-red-900">View all →</Link>
+            <Link to="/patients?tab=pending" className="underline font-medium hover:text-red-900">View all →</Link>
           </p>
         </div>
       )}

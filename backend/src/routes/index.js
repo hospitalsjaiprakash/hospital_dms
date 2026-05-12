@@ -42,6 +42,7 @@ router.get('/patients/upload-history', authenticate, patientCtrl.getUploadHistor
 router.get('/patients/export', authenticate, patientCtrl.exportPatientsExcel);
 router.get('/patients', authenticate, patientCtrl.getPatients);
 router.post('/patients', authenticate, validate(schemas.createPatient), patientCtrl.createPatient);
+router.post('/patients/bulk', authenticate, validate(schemas.bulkUpdatePatients), patientCtrl.bulkUpdatePatients);
 router.get('/patients/:id', authenticate, patientCtrl.getPatient);
 router.patch('/patients/:id', authenticate, validate(schemas.updatePatient), patientCtrl.updatePatient);
 

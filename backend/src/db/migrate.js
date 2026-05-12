@@ -229,6 +229,21 @@ const migrations = [
       DROP INDEX IF EXISTS idx_patients_mobile;
       ALTER TABLE patients DROP COLUMN IF EXISTS mobile;
     `
+  },
+  {
+    name: '013_add_settlement_date_and_fix_discharge_date',
+    sql: `
+      -- Change discharge_date from DATE to TIMESTAMPTZ to store full datetime
+      ALTER TABLE patients
+        ALTER COLUMN discharge_date TYPE TIMESTAMPTZ
+        USING discharge_date::TIMESTAMPTZ;
+
+      -- Add settlement_date column to record when PMJAY was settled
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMPTZ;
+
+      CREATE INDEX IF NOT EXISTS idx_patients_discharge_date ON patients(discharge_date);
+      CREATE INDEX IF NOT EXISTS idx_patients_settlement_date ON patients(settlement_date);
+    `
   }
 ];
 

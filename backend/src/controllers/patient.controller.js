@@ -68,8 +68,10 @@ const getPatient = async (req, res) => {
   const { id } = req.params;
 
   const result = await db.query(
-    `SELECT p.*, 
-      cu.name as created_by_name, uu.name as updated_by_name
+    `SELECT p.*,
+      cu.name as created_by_name,
+      uu.name as updated_by_name,
+      (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id)::int AS document_count
      FROM patients p
      LEFT JOIN users cu ON cu.id = p.created_by
      LEFT JOIN users uu ON uu.id = p.updated_by
@@ -106,9 +108,14 @@ const updatePatient = async (req, res) => {
     return sendError(res, 'Patient must be discharged before settlement can be completed', 422);
   }
 
-  // Set discharge_date if discharging
+  // Set discharge_date if discharging (full ISO timestamp)
   if (updates.hospital_status === 'discharged' && current.hospital_status === 'active') {
-    updates.discharge_date = updates.discharge_date || new Date().toISOString().split('T')[0];
+    updates.discharge_date = updates.discharge_date || new Date().toISOString();
+  }
+
+  // Auto-set settlement_date when marking as completed
+  if (updates.settlement_status === 'completed' && current.settlement_status !== 'completed') {
+    updates.settlement_date = updates.settlement_date || new Date().toISOString();
   }
 
   const fields = Object.keys(updates);
@@ -124,6 +131,68 @@ const updatePatient = async (req, res) => {
   await auditLog(ACTIONS.PATIENT_UPDATE, 'patient')(req, id, current, updates);
 
   return sendSuccess(res, result.rows[0], 'Patient updated successfully');
+};
+
+const bulkUpdatePatients = async (req, res) => {
+  const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date } = req.body;
+  const now = new Date().toISOString();
+
+  if (req.user.role === 'pcc') {
+    return sendError(res, 'PCC cannot perform bulk updates', 403);
+  }
+
+  try {
+    const updatedPatients = await db.withTransaction(async (client) => {
+      const updated = [];
+      for (const id of patientIds) {
+        const existing = await client.query('SELECT * FROM patients WHERE id = $1 FOR UPDATE', [id]);
+        if (!existing.rows.length) continue;
+
+        const current = existing.rows[0];
+        const updates = {};
+
+        if (hospital_status) updates.hospital_status = hospital_status;
+        if (settlement_status) updates.settlement_status = settlement_status;
+
+        // Skip invalid: cannot settle an active patient
+        if (updates.settlement_status === 'completed' && (updates.hospital_status || current.hospital_status) === 'active') {
+          continue;
+        }
+
+        // Set discharge_date (full timestamp) when bulk-discharging
+        if (updates.hospital_status === 'discharged' && current.hospital_status === 'active') {
+          updates.discharge_date = discharge_date || now;
+        }
+
+        // Set settlement_date when bulk-settling
+        if (updates.settlement_status === 'completed' && current.settlement_status !== 'completed') {
+          updates.settlement_date = settlement_date || now;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          const fields = Object.keys(updates);
+          const values = Object.values(updates);
+          const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+
+          const result = await client.query(
+            `UPDATE patients SET ${setClause}, updated_by = $${fields.length + 1}, updated_at = NOW()
+             WHERE id = $${fields.length + 2} RETURNING *`,
+            [...values, req.user.id, id]
+          );
+          updated.push({ id, current, updates: result.rows[0] });
+        }
+      }
+      return updated;
+    });
+
+    for (const item of updatedPatients) {
+      await auditLog(ACTIONS.PATIENT_UPDATE, 'patient')(req, item.id, item.current, item.updates);
+    }
+
+    return sendSuccess(res, { updatedCount: updatedPatients.length }, 'Bulk update successful');
+  } catch (err) {
+    return sendError(res, 'Bulk update failed', 500);
+  }
 };
 
 const getPatientStats = async (req, res) => {
@@ -276,4 +345,4 @@ const exportPatientsExcel = async (req, res) => {
   res.end();
 };
 
-module.exports = { createPatient, getPatients, getPatient, updatePatient, getPatientStats, getUploadHistory, exportPatientsExcel };
+module.exports = { createPatient, getPatients, getPatient, updatePatient, bulkUpdatePatients, getPatientStats, getUploadHistory, exportPatientsExcel };

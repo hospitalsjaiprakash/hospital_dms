@@ -69,6 +69,7 @@ export const patientApi = {
   getOne: (id) => api.get(`/patients/${id}`),
   create: (data) => api.post('/patients', data),
   update: (id, data) => api.patch(`/patients/${id}`, data),
+  bulkUpdate: (data) => api.post('/patients/bulk', data),
   getStats: () => api.get('/patients/stats'),
   getUploadHistory: () => api.get('/patients/upload-history'),
   exportExcel: (params) => api.get('/patients/export', { params, responseType: 'blob' }),

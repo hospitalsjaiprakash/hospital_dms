@@ -42,10 +42,12 @@ function EditPatientModal({ patient, open, onClose }) {
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status,
       discharge_date: patient.discharge_date ? new Date(patient.discharge_date).toISOString().slice(0, 16) : '',
+      settlement_date: patient.settlement_date ? new Date(patient.settlement_date).toISOString().slice(0, 16) : '',
     }
   });
 
   const watchHospitalStatus = watch('hospital_status');
+  const watchSettlementStatus = watch('settlement_status');
 
   const { mutateAsync, isLoading } = useMutation(
     (data) => patientApi.update(patient.id, data)
@@ -54,12 +56,11 @@ function EditPatientModal({ patient, open, onClose }) {
   const onSubmit = async (data) => {
     try {
       const payload = { ...data };
-      if (payload.discharge_date === '') {
-        payload.discharge_date = null;
-      }
+      if (payload.discharge_date === '') payload.discharge_date = null;
+      if (payload.settlement_date === '') payload.settlement_date = null;
 
       await mutateAsync(payload);
-      
+
       if (docFile && watchHospitalStatus === 'discharged') {
         setIsUploading(true);
         const formData = new FormData();
@@ -68,7 +69,7 @@ function EditPatientModal({ patient, open, onClose }) {
         formData.append('doc_type', 'discharge_summary');
         await documentApi.upload(formData);
       }
-      
+
       queryClient.invalidateQueries(['patient', patient.id]);
       queryClient.invalidateQueries('patients');
       queryClient.invalidateQueries('stats');
@@ -145,6 +146,19 @@ function EditPatientModal({ patient, open, onClose }) {
                 </p>
               )}
             </div>
+
+            {/* Settlement Date field when status is completed */}
+            {watchSettlementStatus === 'completed' && (
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  {...register('settlement_date')}
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
+              </div>
+            )}
           </>
         )}
 
@@ -384,13 +398,28 @@ export default function PatientDetailPage() {
             </div>
           )}
 
+          {patient.settlement_date && (
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <CheckCircle size={14} className="text-green-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 font-medium">PMJAY Settled</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {format(new Date(patient.settlement_date), 'dd MMM yyyy')}
+                  <span className="text-xs font-normal text-gray-500 ml-1">at {format(new Date(patient.settlement_date), 'hh:mm a')}</span>
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
               <File size={14} className="text-gray-600" />
             </div>
             <div>
               <p className="text-xs text-gray-400 font-medium">Documents</p>
-              <p className="text-sm font-semibold text-gray-800">{docsPagination?.total ?? '—'}</p>
+              <p className="text-sm font-semibold text-gray-800">{patient.document_count ?? '—'}</p>
             </div>
           </div>
         </div>
@@ -430,7 +459,11 @@ export default function PatientDetailPage() {
                   : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
               )}
             >
-              {type === 'all' ? `All (${docsPagination?.total ?? 0})` : DOC_TYPE_LABELS[type]}
+              {activeDocType === type
+                ? `${type === 'all' ? 'All' : DOC_TYPE_LABELS[type]} (${docsPagination?.total ?? 0})`
+                : type === 'all'
+                  ? `All`
+                  : DOC_TYPE_LABELS[type]}
             </button>
           ))}
         </div>
