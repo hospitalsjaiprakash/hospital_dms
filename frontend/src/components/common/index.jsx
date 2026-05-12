@@ -1,6 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown } from 'lucide-react';
 import logo from '../../assets/logo.webp';
 
 // ── Button ─────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ export const Select = React.forwardRef(({ label, error, required, children, clas
         <select
           ref={ref}
           className={clsx(
-            'w-full rounded-lg border px-3 py-2.5 text-sm text-gray-900 transition-all outline-none bg-white appearance-none',
+            'w-full rounded-lg border px-3 py-2.5 pr-10 text-sm text-gray-900 transition-all outline-none bg-white appearance-none',
             'focus:ring-2 focus:ring-blue-500 focus:border-transparent',
             error ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300',
             className
@@ -111,6 +111,9 @@ export const Select = React.forwardRef(({ label, error, required, children, clas
         >
           {children}
         </select>
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+          <ChevronDown size={16} />
+        </div>
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       </div>
     </div>
@@ -172,11 +175,11 @@ export function StatCard({ title, value, icon: Icon, color = 'blue', trend, clas
 export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end xs:items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className={clsx(
-        'relative bg-white w-full xs:rounded-2xl shadow-2xl animate-slide-up overflow-hidden',
-        'rounded-t-2xl max-h-[92vh] flex flex-col',
+        'relative bg-white w-full rounded-2xl shadow-2xl animate-slide-up overflow-hidden',
+        'max-h-[92vh] flex flex-col',
         maxWidth
       )}>
         {title && (

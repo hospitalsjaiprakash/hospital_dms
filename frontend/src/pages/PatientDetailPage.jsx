@@ -705,26 +705,35 @@ export default function PatientDetailPage() {
         </div>
       </Modal>
 
-      <Modal open={showBulkDeleteModal} onClose={() => setShowBulkDeleteModal(false)} title="Delete Multiple Documents" maxWidth="max-w-sm">
+      <Modal 
+        open={showBulkDeleteModal} 
+        onClose={() => setShowBulkDeleteModal(false)} 
+        title={selectedDocs.size === 1 ? "Delete Document" : "Delete Multiple Documents"} 
+        maxWidth="max-w-sm"
+      >
         <div className="space-y-4">
           <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-red-800">Delete {selectedDocs.size} documents?</p>
-              <p className="text-xs text-red-600 mt-1">This action cannot be undone and will remove all selected files from the system.</p>
+              <p className="text-sm font-semibold text-red-800">
+                Delete {selectedDocs.size} document{selectedDocs.size !== 1 ? 's' : ''}?
+              </p>
+              <p className="text-xs text-red-600 mt-1">
+                This action cannot be undone and will remove all selected files from the system.
+              </p>
             </div>
           </div>
           <div className="flex gap-3">
             <Button variant="secondary" onClick={() => setShowBulkDeleteModal(false)} className="flex-1">Cancel</Button>
             <Button variant="danger" loading={bulkDeleting} onClick={() => bulkDeleteDocuments(Array.from(selectedDocs.keys()))} className="flex-1">
-              Delete All
+              Delete
             </Button>
           </div>
         </div>
       </Modal>
 
       {/* Floating Bulk Actions Bar (Mobile only) */}
-      {selectedDocs.size > 0 && (
+      {selectedDocs.size > 0 && !showBulkDeleteModal && !deleteDoc && !viewDoc && !uploadOpen && !editOpen && (
         <div className="sm:hidden fixed bottom-[72px] left-4 right-4 z-50 bg-white rounded-2xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-4 animate-slide-up">
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col">
