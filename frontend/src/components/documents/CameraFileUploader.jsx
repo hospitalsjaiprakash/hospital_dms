@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
 import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn } from 'lucide-react';
@@ -164,7 +165,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       // 2. Draw sophisticated GPS Tag Overlay
       const scale = canvas.width / 1000;
-      const cardHeight = 180 * scale;
+      const cardHeight = 220 * scale; // Increased for more data
       const cardPadding = 15 * scale;
       
       // Draw background card (semi-transparent dark)
@@ -188,33 +189,43 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       // Text drawing
       ctx.fillStyle = 'white';
       
+      // Line 0: Header Badge
+      ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
+      ctx.fillStyle = '#3b82f6'; // blue-500
+      ctx.fillText("GPS CAMERA | GEO-TAGGING", textX, canvas.height - cardHeight + cardPadding + (10 * scale));
+
       // Line 1: Location Title (City, State, Country)
+      ctx.fillStyle = 'white';
       const locationTitle = address ? address.split(',').slice(0, 3).join(',') : 'Location Tagging...';
-      ctx.font = `bold ${24 * scale}px Inter, sans-serif`;
-      ctx.fillText(locationTitle + " 🇮🇳", textX, canvas.height - cardHeight + cardPadding + (25 * scale));
+      ctx.font = `bold ${26 * scale}px Inter, sans-serif`;
+      ctx.fillText(locationTitle + " 🇮🇳", textX, canvas.height - cardHeight + cardPadding + (40 * scale));
 
       // Line 2: Full Address (Smaller)
       ctx.font = `${16 * scale}px Inter, sans-serif`;
-      const addressLines = address ? address.split(',').slice(3).join(',').match(/.{1,60}/g) || [] : [];
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      let currentY = canvas.height - cardHeight + cardPadding + (55 * scale);
+      const addressLines = address ? address.split(',').slice(3).join(',').match(/.{1,65}/g) || [] : [];
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      let currentY = canvas.height - cardHeight + cardPadding + (65 * scale);
       addressLines.slice(0, 2).forEach(line => {
         ctx.fillText(line.trim(), textX, currentY);
         currentY += 20 * scale;
       });
 
-      // Line 3: Lat/Long
+      // Line 3: Lat/Long & Hospital
       ctx.fillStyle = 'white';
-      ctx.font = `500 ${16 * scale}px Inter, sans-serif`;
+      ctx.font = `bold ${18 * scale}px Inter, sans-serif`;
       const locStr = gpsData 
         ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
         : 'Lat -- Long --';
-      ctx.fillText(locStr, textX, currentY + (5 * scale));
+      ctx.fillText(locStr, textX, currentY + (10 * scale));
+      
+      ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
+      ctx.fillStyle = '#fbbf24'; // amber-400
+      ctx.fillText("JPHRC ROURKELA HOSPITAL", textX, currentY + (28 * scale));
 
       // Line 4: DateTime
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.font = `${14 * scale}px Inter, sans-serif`;
-      ctx.fillText(`${dateStr} ${timeStr} ${tzOffset}`, textX, currentY + (28 * scale));
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = `500 ${16 * scale}px Inter, sans-serif`;
+      ctx.fillText(`${dateStr} ${timeStr} ${tzOffset}`, textX, currentY + (48 * scale));
 
       const blob = await new Promise((resolve, reject) =>
         canvas.toBlob(b => b ? resolve(b) : reject(new Error('Empty blob')), 'image/jpeg', 0.90)
@@ -288,10 +299,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     noClick: true, // Trigger manually via dedicated button
   });
 
-  // ── Camera View ─────────────────────────────────────────────────────────────
+  // ── Camera View (Rendered via Portal for true full-screen) ──────────────────
   if (mode === 'camera') {
-    return (
-      <div className="fixed inset-0 z-[100] bg-black flex flex-col h-[100dvh] w-full overflow-hidden">
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-black flex flex-col h-[100dvh] w-full overflow-hidden touch-none">
         {/* Video Preview */}
         <div className="relative flex-1 bg-black overflow-hidden">
           <video
@@ -310,7 +321,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             </div>
           )}
 
-          {/* GPS Live Tagging Overlay (Matches Captured Result Aesthetic) */}
+          {/* GPS Live Tagging Overlay */}
           {videoReady && (
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/60 backdrop-blur-sm text-white flex gap-4 items-end border-t border-white/10">
               {/* Live Map Placeholder */}
@@ -330,19 +341,23 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
               </div>
 
               <div className="flex-1 min-w-0 space-y-0.5 pb-1">
+                <div className="flex items-center gap-2">
+                   <span className="bg-blue-600 text-[8px] px-1 rounded font-bold">GEO-TAG</span>
+                   <span className="text-[9px] font-bold text-amber-400">JPHRC HOSPITAL</span>
+                </div>
                 <p className="text-sm font-bold truncate">
                   {address ? address.split(',').slice(0, 2).join(', ') : 'Determining location...'} 🇮🇳
                 </p>
-                <p className="text-[10px] text-white/70 line-clamp-2 leading-tight">
+                <p className="text-[10px] text-white/70 line-clamp-1 leading-tight">
                   {address ? address.split(',').slice(2).join(', ').trim() : 'Fetching address details...'}
                 </p>
-                <div className="pt-1 flex flex-col text-[10px] text-white/90 font-medium">
-                  <span className="text-blue-300">
+                <div className="pt-0.5 flex flex-col text-[10px] text-white/90 font-medium">
+                  <span className="text-blue-300 font-bold">
                     {gpsData 
                       ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
                       : 'GPS Signal: Searching...'}
                   </span>
-                  <span>{liveTime.toLocaleDateString('en-GB', { weekday: 'long' })}, {liveTime.toLocaleString()}</span>
+                  <span className="text-[9px] opacity-80">{liveTime.toLocaleDateString('en-GB', { weekday: 'long' })}, {liveTime.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -405,7 +420,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           {/* Placeholder for symmetry */}
           <div className="w-12" />
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
