@@ -36,7 +36,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [videoReady, setVideoReady] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [gpsData, setGpsData] = useState(null);
+  const [address, setAddress] = useState(null);
   const [fetchingGps, setFetchingGps] = useState(false);
+  const [liveTime, setLiveTime] = useState(new Date());
+  const [watchId, setWatchId] = useState(null);
 
   const streamRef = useRef(null);
 
@@ -64,6 +67,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
+    }
+    if (watchId) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
     }
     setVideoReady(false);
     setMode('grid');
@@ -96,6 +103,28 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       
       streamRef.current = mediaStream;
       setMode('camera');
+
+      // Start GPS tracking for live overlay
+      const id = navigator.geolocation.watchPosition(
+        async (pos) => {
+          setGpsData(pos.coords);
+          // Only fetch address if significantly moved or first time
+          if (!address) {
+            try {
+              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+              const data = await res.json();
+              setAddress(data.display_name);
+            } catch (e) { console.error("Geocoding error", e); }
+          }
+        },
+        () => setGpsData(null),
+        { enableHighAccuracy: true }
+      );
+      setWatchId(id);
+
+      // Start time ticker
+      const timer = setInterval(() => setLiveTime(new Date()), 1000);
+      return () => clearInterval(timer);
     } catch (err) {
       console.error('Camera error:', err);
       toast.error('Could not access camera. Please allow camera permission.');
@@ -111,47 +140,81 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     }
 
     setCapturing(true);
-    setFetchingGps(true);
     try {
-      // 1. Fetch Geolocation
-      const position = await new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          () => resolve(null), // Fallback if user denies or error
-          { enableHighAccuracy: true, timeout: 5000 }
-        );
-      });
-      setFetchingGps(false);
-
       const canvas = document.createElement('canvas');
       canvas.width = videoEl.videoWidth;
       canvas.height = videoEl.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoEl, 0, 0);
 
-      // 2. Overlay GPS & Timestamp
-      const padding = canvas.width * 0.02;
-      const fontSize = Math.max(12, Math.floor(canvas.width * 0.025));
-      ctx.font = `${fontSize}px Inter, sans-serif`;
+      // 1. Fetch Static Map (Optional but recommended for the look)
+      let mapImg = null;
+      if (gpsData) {
+        try {
+          const mapUrl = `https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=14&l=map&size=200,200`;
+          mapImg = await new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = mapUrl;
+          });
+        } catch (e) { console.error("Map fetch failed", e); }
+      }
+
+      // 2. Draw sophisticated GPS Tag Overlay
+      const scale = canvas.width / 1000;
+      const cardHeight = 180 * scale;
+      const cardPadding = 15 * scale;
       
-      const now = new Date();
-      const timeStr = now.toLocaleString();
-      const locStr = position 
-        ? `LAT: ${position.coords.latitude.toFixed(6)} LGN: ${position.coords.longitude.toFixed(6)}`
-        : 'Location: Unknown';
-      const hospitalStr = 'JPHRC ROURKELA';
+      // Draw background card (semi-transparent dark)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, canvas.height - cardHeight, canvas.width, cardHeight);
 
-      // Draw background bar
-      const barHeight = fontSize * 3.5;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+      let textX = cardPadding;
+      
+      // Draw Mini Map if available
+      if (mapImg) {
+        const mapSize = cardHeight - (cardPadding * 2);
+        ctx.drawImage(mapImg, cardPadding, canvas.height - cardHeight + cardPadding, mapSize, mapSize);
+        textX = cardPadding + mapSize + (cardPadding);
+      }
 
-      // Draw text
+      const now = liveTime;
+      const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const tzOffset = `GMT ${now.getTimezoneOffset() <= 0 ? '+' : '-'}${Math.abs(Math.floor(now.getTimezoneOffset() / 60)).toString().padStart(2, '0')}:${Math.abs(now.getTimezoneOffset() % 60).toString().padStart(2, '0')}`;
+
+      // Text drawing
       ctx.fillStyle = 'white';
-      ctx.fillText(hospitalStr, padding, canvas.height - barHeight + fontSize + 5);
-      ctx.font = `${fontSize * 0.8}px Inter, sans-serif`;
-      ctx.fillText(locStr, padding, canvas.height - barHeight + fontSize * 2.2 + 5);
-      ctx.fillText(timeStr, padding, canvas.height - barHeight + fontSize * 3.2 + 5);
+      
+      // Line 1: Location Title (City, State, Country)
+      const locationTitle = address ? address.split(',').slice(0, 3).join(',') : 'Location Tagging...';
+      ctx.font = `bold ${24 * scale}px Inter, sans-serif`;
+      ctx.fillText(locationTitle + " 🇮🇳", textX, canvas.height - cardHeight + cardPadding + (25 * scale));
+
+      // Line 2: Full Address (Smaller)
+      ctx.font = `${16 * scale}px Inter, sans-serif`;
+      const addressLines = address ? address.split(',').slice(3).join(',').match(/.{1,60}/g) || [] : [];
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      let currentY = canvas.height - cardHeight + cardPadding + (55 * scale);
+      addressLines.slice(0, 2).forEach(line => {
+        ctx.fillText(line.trim(), textX, currentY);
+        currentY += 20 * scale;
+      });
+
+      // Line 3: Lat/Long
+      ctx.fillStyle = 'white';
+      ctx.font = `500 ${16 * scale}px Inter, sans-serif`;
+      const locStr = gpsData 
+        ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
+        : 'Lat -- Long --';
+      ctx.fillText(locStr, textX, currentY + (5 * scale));
+
+      // Line 4: DateTime
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = `${14 * scale}px Inter, sans-serif`;
+      ctx.fillText(`${dateStr} ${timeStr} ${tzOffset}`, textX, currentY + (28 * scale));
 
       const blob = await new Promise((resolve, reject) =>
         canvas.toBlob(b => b ? resolve(b) : reject(new Error('Empty blob')), 'image/jpeg', 0.90)
@@ -172,7 +235,6 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         const updated = [...files, newEntry];
         handleChange(updated);
         toast.success(`Photo ${updated.length} captured! 📷`, { duration: 1200 });
-        // Stay in camera mode to allow more captures
       }
     } catch (err) {
       console.error('Capture error:', err);
@@ -229,53 +291,119 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   // ── Camera View ─────────────────────────────────────────────────────────────
   if (mode === 'camera') {
     return (
-      <div className="fixed inset-0 md:fixed md:inset-auto md:rounded-xl md:overflow-hidden bg-black relative md:relative md:max-w-lg md:mx-auto md:mt-4" style={{ aspectRatio: 'auto' }}>
-        <video
-          id="jphrc-cfu-video"
-          ref={videoRefCallback}
-          autoPlay playsInline muted
-          onLoadedMetadata={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
-          onCanPlay={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
-          className="w-full h-full object-cover md:object-cover"
-          style={{ display: 'block' }}
-        />
+      <div className="fixed inset-0 z-[100] bg-black flex flex-col h-[100dvh] w-full overflow-hidden">
+        {/* Video Preview */}
+        <div className="relative flex-1 bg-black overflow-hidden">
+          <video
+            id="jphrc-cfu-video"
+            ref={videoRefCallback}
+            autoPlay playsInline muted
+            onLoadedMetadata={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
+            className="w-full h-full object-cover"
+          />
 
-        {!videoReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-black/60">
-            <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-            <p className="text-xs font-medium">Starting camera...</p>
-          </div>
-        )}
+          {/* Loading State */}
+          {!videoReady && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-black">
+              <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+              <p className="text-sm font-medium tracking-wide">Initializing Camera...</p>
+            </div>
+          )}
 
-        {/* Photo counter (multi mode) */}
-        {!(isLegacySingle || single) && files.length > 0 && (
-          <div className="absolute top-3 right-3 bg-black/60 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-            {files.length} captured
-          </div>
-        )}
+          {/* GPS Live Tagging Overlay (Matches Captured Result Aesthetic) */}
+          {videoReady && (
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/60 backdrop-blur-sm text-white flex gap-4 items-end border-t border-white/10">
+              {/* Live Map Placeholder */}
+              <div className="w-20 h-20 bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 border border-white/20 relative">
+                {gpsData ? (
+                  <img 
+                    src={`https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=14&l=map&size=100,100`}
+                    className="w-full h-full object-cover"
+                    alt="map"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /></div>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,1)] animate-pulse" />
+                </div>
+              </div>
 
-        {(capturing || compressing || fetchingGps) && (
-          <div className="absolute top-3 left-3 bg-blue-600/90 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
-            <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-            {fetchingGps ? 'Getting Location...' : compressing ? 'Tagging & Saving...' : 'Capturing...'}
-          </div>
-        )}
+              <div className="flex-1 min-w-0 space-y-0.5 pb-1">
+                <p className="text-sm font-bold truncate">
+                  {address ? address.split(',').slice(0, 2).join(', ') : 'Determining location...'} 🇮🇳
+                </p>
+                <p className="text-[10px] text-white/70 line-clamp-2 leading-tight">
+                  {address ? address.split(',').slice(2).join(', ').trim() : 'Fetching address details...'}
+                </p>
+                <div className="pt-1 flex flex-col text-[10px] text-white/90 font-medium">
+                  <span className="text-blue-300">
+                    {gpsData 
+                      ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
+                      : 'GPS Signal: Searching...'}
+                  </span>
+                  <span>{liveTime.toLocaleDateString('en-GB', { weekday: 'long' })}, {liveTime.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 px-4 md:bottom-4 md:px-4 md:gap-4">
-          <Button variant="danger" type="button" onClick={stopCamera} disabled={capturing || compressing}>
-            {(isLegacySingle || single) ? 'Cancel' : `Done (${files.length})`}
-          </Button>
-          <Button
-            variant="primary" type="button" onClick={capturePhoto}
-            disabled={capturing || compressing || !videoReady}
-            className="px-8"
-          >
-            {capturing || compressing ? (
-              <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Processing...</>
-            ) : (
-              <><Camera size={16} className="mr-1" /> Capture</>
+          {/* Status Indicators */}
+          <div className="absolute top-4 left-4 flex flex-col gap-2">
+            {(capturing || compressing) && (
+              <div className="bg-blue-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-2 shadow-xl animate-pulse">
+                <div className="w-2 h-2 bg-white rounded-full animate-ping" />
+                {compressing ? 'TAGGING & SAVING...' : 'CAPTURING...'}
+              </div>
             )}
-          </Button>
+            {!(isLegacySingle || single) && files.length > 0 && (
+              <div className="bg-white/20 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full w-fit border border-white/20">
+                {files.length} PHOTOS CAPTURED
+              </div>
+            )}
+          </div>
+
+          {/* Close Button */}
+          <button 
+            type="button" onClick={stopCamera}
+            className="absolute top-4 right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Shutter Controls */}
+        <div className="h-32 bg-black flex items-center justify-around px-8 border-t border-white/5">
+          {/* Done/Cancel Button */}
+          <button 
+            type="button" onClick={stopCamera} disabled={capturing || compressing}
+            className="text-white/70 text-sm font-semibold hover:text-white transition-colors"
+          >
+            {(isLegacySingle || single) ? 'Cancel' : 'Done'}
+          </button>
+
+          {/* Shutter Button */}
+          <button
+            type="button" 
+            onClick={capturePhoto}
+            disabled={capturing || compressing || !videoReady}
+            className="group relative flex items-center justify-center"
+          >
+            <div className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center transition-transform active:scale-90">
+              <div className={clsx(
+                "w-16 h-16 rounded-full transition-all",
+                (capturing || compressing) ? "bg-gray-500 scale-75" : "bg-white scale-100"
+              )} />
+            </div>
+            {(capturing || compressing) && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+              </div>
+            )}
+          </button>
+
+          {/* Placeholder for symmetry */}
+          <div className="w-12" />
         </div>
       </div>
     );
