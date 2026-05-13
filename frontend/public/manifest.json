@@ -1,11 +1,23 @@
 {
-  "short_name": "Hospital DMS",
-  "name": "Hospital Patient Document Management System",
+  "short_name": "JPHRC DMS",
+  "name": "JPHRC Hospital Document Management",
+  "description": "Professional Hospital Document Management with GPS Verified Camera",
   "icons": [
-    { "src": "favicon.ico", "sizes": "64x64 32x32 24x24 16x16", "type": "image/x-icon" }
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#1d4ed8",
   "background_color": "#ffffff"
 }
