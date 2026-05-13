@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, X, Check, ArrowRight, RotateCw, Trash2, ChevronLeft, ChevronRight, FileText, Scan } from 'lucide-react';
 import { Button, Spinner } from '../common';
 import toast from 'react-hot-toast';
@@ -361,11 +362,12 @@ export default function DocumentScanner({ onComplete, onClose }) {
     </div>
   );
 
-  return (
-    <div className="fixed inset-0 z-[9999] bg-white flex flex-col overflow-hidden touch-none animate-slide-up">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-white flex flex-col h-[100dvh] w-full overflow-hidden touch-none animate-slide-up">
       {step === 'camera' && renderCamera()}
       {step === 'crop' && renderCrop()}
       {step === 'review' && renderReview()}
-    </div>
+    </div>,
+    document.body
   );
 }
