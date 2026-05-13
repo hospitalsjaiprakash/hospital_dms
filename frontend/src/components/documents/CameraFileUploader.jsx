@@ -218,11 +218,12 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     for (const f of acceptedFiles) await processAndSetFile(f);
   }, [files]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { 'image/jpeg': [], 'image/png': [], 'image/*': [], 'application/pdf': [] },
     maxFiles: (isLegacySingle || single) ? 1 : 10,
     disabled: disabled || compressing || mode === 'camera',
+    noClick: true, // Trigger manually via dedicated button
   });
 
   // ── Camera View ─────────────────────────────────────────────────────────────
@@ -356,36 +357,53 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Single upload area optimized for system picker */}
-      <div
-        {...getRootProps()}
-        className={clsx(
-          'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all',
-          isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50',
-          (disabled || compressing) && 'pointer-events-none opacity-60'
-        )}
-      >
-        <input {...getInputProps()} />
-        {compressing ? (
-          <div className="space-y-2">
-            <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />
-            <p className="text-sm text-blue-600 font-medium font-bold">Compressing & Preparing...</p>
+      {/* Dual action area: Internal Camera vs File Picker */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Option 1: Internal GPS Camera */}
+        <button
+          type="button"
+          onClick={startCamera}
+          disabled={disabled || compressing}
+          className={clsx(
+            "flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed transition-all",
+            "border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 group",
+            (disabled || compressing) && "opacity-60 cursor-not-allowed"
+          )}
+        >
+          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <Camera className="w-6 h-6 text-blue-600" />
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-2">
-              <Camera className="w-8 h-8 text-blue-500" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-base font-bold text-gray-800">
-                {isDragActive ? 'Drop to upload' : 'Click to Take Photo or Select'}
-              </p>
-              <p className="text-xs text-gray-400 max-w-[200px] mx-auto leading-relaxed">
-                Choose <span className="font-bold text-gray-600">GPS Camera</span> from the list after clicking
-              </p>
-            </div>
+          <div className="text-center">
+            <p className="text-sm font-bold text-gray-800">Use Internal Camera</p>
+            <p className="text-[10px] text-blue-600 font-medium">Automatic GPS & Time Tagging</p>
           </div>
-        )}
+        </button>
+
+        {/* Option 2: System File Picker */}
+        <div
+          {...getRootProps()}
+          onClick={open}
+          className={clsx(
+            "flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer",
+            isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
+            (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
+          )}
+        >
+          <input {...getInputProps()} />
+          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-3">
+            <Upload className="w-6 h-6 text-gray-500" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-bold text-gray-700">Select Files / Gallery</p>
+            <p className="text-[10px] text-gray-400">PDF or existing photos</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+        <p className="text-[11px] text-amber-700 leading-relaxed">
+          <span className="font-bold">Pro Tip:</span> Use the <span className="font-bold underline">Internal Camera</span> for automatic hospital branding and GPS verification. If you prefer an external app, use "Select Files" and choose your camera app.
+        </p>
       </div>
 
 
