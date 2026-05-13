@@ -6,6 +6,7 @@ import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn } from 'luc
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
+import DocumentScanner from './DocumentScanner';
 
 /**
  * CameraFileUploader
@@ -41,6 +42,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [fetchingGps, setFetchingGps] = useState(false);
   const [liveTime, setLiveTime] = useState(new Date());
   const [watchId, setWatchId] = useState(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const streamRef = useRef(null);
 
@@ -501,8 +503,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Compact Action Area: Camera vs Gallery (Prepared for 3rd option like Scanner) */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mb-3">
+      {/* Compact Action Area: Camera vs Gallery vs Scanner */}
+      <div className="grid grid-cols-3 sm:grid-cols-1 gap-2 mb-3">
         {/* Option 1: Internal GPS Camera - Mobile Only */}
         <button
           type="button"
@@ -523,14 +525,13 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <p className="text-[10px] font-bold text-gray-800">GPS Camera</p>
         </button>
 
-        {/* Option 2: System File Picker - Always visible, full width on Desktop */}
+        {/* Option 2: System File Picker - Always visible */}
         <div
           {...getRootProps()}
           onClick={open}
           className={clsx(
             "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 border-dashed transition-all cursor-pointer",
             isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
-            "col-span-1 sm:col-span-2", // Full width on desktop
             (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
         >
@@ -540,6 +541,26 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           </div>
           <p className="text-[10px] font-bold text-gray-700">Gallery / PDF</p>
         </div>
+
+        {/* Option 3: Document Scanner - Mobile Only */}
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          disabled={disabled || compressing}
+          className={clsx(
+            "sm:hidden flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
+            "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
+            (disabled || compressing) && "opacity-60 cursor-not-allowed"
+          )}
+        >
+          <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <Scan className="w-5 h-5 text-purple-600" />
+            <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+              SCAN
+            </div>
+          </div>
+          <p className="text-[10px] font-bold text-gray-800">Scanner</p>
+        </button>
       </div>
 
       <div className="sm:hidden bg-amber-50/50 border border-amber-100/50 rounded-lg p-2.5">
@@ -562,6 +583,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
             onClick={e => e.stopPropagation()} />
         </div>
+      )}
+
+      {/* Document Scanner Component */}
+      {scannerOpen && (
+        <DocumentScanner 
+          onClose={() => setScannerOpen(false)} 
+          onComplete={(pdfFile) => processAndSetFile(pdfFile)} 
+        />
       )}
     </div>
   );
