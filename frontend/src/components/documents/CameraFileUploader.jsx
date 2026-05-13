@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
-import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn } from 'lucide-react';
+import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn, Scan } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
