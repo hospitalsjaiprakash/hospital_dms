@@ -501,24 +501,26 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Compact Action Area: Camera vs Gallery */}
-      <div className="flex flex-row gap-3">
+      {/* Compact Action Area: Camera vs Gallery (Prepared for 3rd option like Scanner) */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mb-3">
         {/* Option 1: Internal GPS Camera - Mobile Only */}
         <button
           type="button"
           onClick={startCamera}
           disabled={disabled || compressing}
           className={clsx(
-            "flex-1 sm:hidden flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 transition-all",
+            "sm:hidden flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
             "border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 group",
             (disabled || compressing) && "opacity-60 cursor-not-allowed"
           )}
         >
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+          <div className="relative w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
             <Camera className="w-5 h-5 text-blue-600" />
+            <div className="absolute -top-1 -right-1 bg-blue-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+              GPS
+            </div>
           </div>
-          <p className="text-[11px] font-bold text-gray-800">GPS Camera</p>
-          <p className="text-[9px] text-blue-500 font-medium whitespace-nowrap">Auto-Tagging</p>
+          <p className="text-[10px] font-bold text-gray-800">GPS Camera</p>
         </button>
 
         {/* Option 2: System File Picker - Always visible, full width on Desktop */}
@@ -526,17 +528,17 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           {...getRootProps()}
           onClick={open}
           className={clsx(
-            "flex-1 flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 border-dashed transition-all cursor-pointer",
+            "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 border-dashed transition-all cursor-pointer",
             isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
+            "col-span-1 sm:col-span-2", // Full width on desktop
             (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
         >
           <input {...getInputProps()} />
-          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mb-2">
+          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mb-1">
             <Upload className="w-5 h-5 text-gray-500" />
           </div>
-          <p className="text-[11px] font-bold text-gray-700">Gallery / PDF</p>
-          <p className="text-[9px] text-gray-400 whitespace-nowrap">Existing files</p>
+          <p className="text-[10px] font-bold text-gray-700">Gallery / PDF</p>
         </div>
       </div>
 
