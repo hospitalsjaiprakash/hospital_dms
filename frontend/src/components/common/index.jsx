@@ -207,22 +207,25 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
   return (
     <div className={clsx('flex flex-col items-center text-center group cursor-default select-none', className)}>
       <div className={clsx(
-        'bg-white rounded-[2.5rem] flex items-center justify-center mb-6 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden transition-all duration-500 group-hover:scale-105 group-hover:rotate-3 ring-8 ring-white/50',
+        'bg-white rounded-full flex items-center justify-center mb-6 shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden transition-all duration-500 group-hover:scale-105 group-hover:rotate-3 ring-8 ring-white/30',
         logoSizes[logoSize]
       )}>
-        <img src={logo} alt="Hospital Logo" className="w-full h-full object-contain p-1" />
+        <img src={logo} alt="Hospital Logo" className="w-full h-full object-cover rounded-full p-0.5" />
       </div>
-      <div className="space-y-1">
-        <h1 className="text-[10px] lg:text-[13px] font-black leading-tight uppercase tracking-[0.2em] transition-colors whitespace-nowrap">
-          JAIPRAKASH HOSPITAL <span className="text-inherit drop-shadow-md lg:text-white lg:brightness-125">&</span> RESEARCH CENTER
+      <div className="space-y-2">
+        <h1 className="text-sm lg:text-base font-black leading-tight uppercase tracking-widest text-inherit">
+          JAIPRAKASH HOSPITAL <br className="lg:hidden" />
+          <span className="text-inherit opacity-90">&</span> RESEARCH CENTRE
         </h1>
         {showSubtitle && (
-          <div className="flex items-center justify-center gap-2">
-            <div className="h-px w-4 bg-gradient-to-r from-transparent to-current opacity-30" />
-            <p className="text-[8px] font-extrabold uppercase tracking-[0.3em] opacity-70 whitespace-nowrap">
+          <div className="flex flex-col items-center gap-1.5 mt-2">
+            <p className="text-[9px] font-black uppercase tracking-[0.4em] opacity-80 whitespace-nowrap">
               ROURKELA
             </p>
-            <div className="h-px w-4 bg-gradient-to-l from-transparent to-current opacity-30" />
+            <div className="h-px w-12 bg-current opacity-20" />
+            <p className="text-[8px] font-extrabold uppercase tracking-[0.2em] opacity-60 max-w-[200px] leading-relaxed">
+              "Quality Healthcare at Affordable Price"
+            </p>
           </div>
         )}
       </div>

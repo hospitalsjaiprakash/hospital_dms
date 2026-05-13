@@ -66,9 +66,6 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
           >
             <div className="bg-white/10 backdrop-blur-md rounded-[3rem] p-8 border border-white/20 shadow-2xl">
               <Brand className="!text-white" showSubtitle={true} />
-              <div className="mt-6 pt-6 border-t border-white/10 text-white/90 text-[11px] font-black uppercase tracking-[0.2em] whitespace-nowrap">
-                "QUALITY HEALTHCARE AT AFFORDABLE PRICE"
-              </div>
             </div>
           </motion.div>
         </motion.div>
