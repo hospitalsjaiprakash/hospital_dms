@@ -501,54 +501,52 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Dual action area: Internal Camera vs File Picker */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Option 1: Internal GPS Camera */}
+      {/* Compact Action Area: Camera vs Gallery */}
+      <div className="flex flex-row gap-3">
+        {/* Option 1: Internal GPS Camera - Mobile Only */}
         <button
           type="button"
           onClick={startCamera}
           disabled={disabled || compressing}
           className={clsx(
-            "flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed transition-all",
-            "border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 group",
+            "flex-1 sm:hidden flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 transition-all",
+            "border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 group",
             (disabled || compressing) && "opacity-60 cursor-not-allowed"
           )}
         >
-          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <Camera className="w-6 h-6 text-blue-600" />
+          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+            <Camera className="w-5 h-5 text-blue-600" />
           </div>
-          <div className="text-center">
-            <p className="text-sm font-bold text-gray-800">Use Internal Camera</p>
-            <p className="text-[10px] text-blue-600 font-medium">Automatic GPS & Time Tagging</p>
-          </div>
+          <p className="text-[11px] font-bold text-gray-800">GPS Camera</p>
+          <p className="text-[9px] text-blue-500 font-medium whitespace-nowrap">Auto-Tagging</p>
         </button>
 
-        {/* Option 2: System File Picker */}
+        {/* Option 2: System File Picker - Always visible, full width on Desktop */}
         <div
           {...getRootProps()}
           onClick={open}
           className={clsx(
-            "flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer",
+            "flex-1 flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 border-dashed transition-all cursor-pointer",
             isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
             (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
         >
           <input {...getInputProps()} />
-          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-3">
-            <Upload className="w-6 h-6 text-gray-500" />
+          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mb-2">
+            <Upload className="w-5 h-5 text-gray-500" />
           </div>
-          <div className="text-center">
-            <p className="text-sm font-bold text-gray-700">Select Files / Gallery</p>
-            <p className="text-[10px] text-gray-400">PDF or existing photos</p>
-          </div>
+          <p className="text-[11px] font-bold text-gray-700">Gallery / PDF</p>
+          <p className="text-[9px] text-gray-400 whitespace-nowrap">Existing files</p>
         </div>
       </div>
 
-      <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
-        <p className="text-[11px] text-amber-700 leading-relaxed">
-          <span className="font-bold">Pro Tip:</span> Use the <span className="font-bold underline">Internal Camera</span> for automatic hospital branding and GPS verification. If you prefer an external app, use "Select Files" and choose your camera app.
+      <div className="sm:hidden bg-amber-50/50 border border-amber-100/50 rounded-lg p-2.5">
+        <p className="text-[10px] text-amber-700 leading-tight">
+          <span className="font-bold uppercase tracking-tight">Recommendation:</span> Use the <span className="font-bold underline">GPS Camera</span> for automatic branding and verification.
         </p>
       </div>
+
+
 
 
 
