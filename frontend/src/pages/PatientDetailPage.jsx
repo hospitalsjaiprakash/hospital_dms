@@ -5,6 +5,7 @@ import { patientApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Card, Badge, Button, Select, Spinner, EmptyState, Modal } from '../components/common';
 import DocumentUpload from '../components/documents/DocumentUpload';
+import DocumentActionModal from '../components/documents/DocumentActionModal';
 import DocumentViewerModal from '../components/documents/DocumentViewerModal';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, API_URL as CONST_API_URL } from '../components/documents/constants';
@@ -308,6 +309,7 @@ export default function PatientDetailPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [actionDocId, setActionDocId] = useState(null);
 
   const { data: patientData, isLoading: patientLoading } = useQuery(
     ['patient', id],
@@ -676,7 +678,23 @@ export default function PatientDetailPage() {
 
       {/* Document Viewer */}
       {viewDoc && (
-        <DocumentViewerModal doc={viewDoc} onClose={() => setViewDoc(null)} />
+        <DocumentViewerModal 
+          doc={{
+            ...viewDoc,
+            canAction: canEdit(viewDoc.uploaded_by, viewDoc.uploader_role),
+            onDelete: () => { setViewDoc(null); setDeleteDoc(viewDoc); },
+            onEdit: () => { setViewDoc(null); setActionDocId(viewDoc.id); }
+          }} 
+          onClose={() => setViewDoc(null)} 
+        />
+      )}
+
+      {actionDocId && (
+        <DocumentActionModal 
+          docId={actionDocId} 
+          open={!!actionDocId} 
+          onClose={() => setActionDocId(null)} 
+        />
       )}
 
       {uploadOpen && (

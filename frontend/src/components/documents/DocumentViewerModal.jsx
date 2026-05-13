@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Download, FileText, User, X, ZoomIn, File } from 'lucide-react';
+import { Download, FileText, User, X, ZoomIn, File, Trash2, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
@@ -54,6 +54,10 @@ export default function DocumentViewerModal({ doc, onClose }) {
     ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
     : doc.file_name;
 
+  const canAction = doc.canAction;
+  const onDelete = doc.onDelete;
+  const onEdit = doc.onEdit;
+
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-black/95 safe-area-inset">
       {/* Header */}
@@ -64,7 +68,25 @@ export default function DocumentViewerModal({ doc, onClose }) {
           </span>
           <p className="text-xs sm:text-sm font-medium text-white truncate">{displayName}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          {canAction && (
+            <>
+              <button
+                onClick={onEdit}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-colors border border-gray-700"
+              >
+                <Edit2 size={14} className="text-blue-400" />
+                <span className="hidden sm:inline">Edit</span>
+              </button>
+              <button
+                onClick={onDelete}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-colors border border-gray-700"
+              >
+                <Trash2 size={14} className="text-red-400" />
+                <span className="hidden sm:inline">Delete</span>
+              </button>
+            </>
+          )}
           <button
             onClick={handleDownload}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"

@@ -33,45 +33,23 @@ export default function DocumentUpload({ patientId, open, onClose }) {
 
   const handleClose = () => {
     setFiles([]);
-    setTempFile(null);
     setUploadProgress(null);
     reset();
     onClose();
   };
 
-  const handleAddFile = () => {
-    if (!tempFile) { 
-      toast.error('Please select a file'); 
-      return; 
-    }
-    if (!docType) { 
-      toast.error('Please select document type'); 
-      return; 
-    }
-
-    const newFile = {
-      id: Date.now(),
-      file: tempFile.file,
-      type: tempFile.type,
-      name: tempFile.file.name,
-      docType,
-      notes,
-      preview: tempFile.preview
-    };
-
-    setFiles(prev => [...prev, newFile]);
-    setTempFile(null);
-    toast.success('Document added to queue!', { duration: 1000 });
-  };
-
-  const removeFile = (id) => {
-    setFiles(prev => prev.filter(f => f.id !== id));
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUploadAll = async () => {
     if (files.length === 0) { 
-      toast.error('No documents to upload'); 
+      toast.error('No documents captured/selected'); 
       return; 
+    }
+    if (!docType) {
+      toast.error('Please select document type');
+      return;
     }
 
     setUploadProgress({ done: 0, total: files.length });
@@ -85,7 +63,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
         let fileName = fileItem.name;
         if (!fileName || fileName === 'blob' || fileName === 'image') {
           const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
-          fileName = `${fileItem.docType}_${i + 1}_${Date.now()}.${ext}`;
+          fileName = `${docType}_${i + 1}_${Date.now()}.${ext}`;
         } else if (!fileName.includes('.')) {
           const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
           fileName = `${fileName}.${ext}`;
@@ -93,21 +71,22 @@ export default function DocumentUpload({ patientId, open, onClose }) {
 
         formData.append('file', fileItem.file, fileName);
         formData.append('patient_id', patientId);
-        formData.append('doc_type', fileItem.docType);
-        if (fileItem.notes) formData.append('notes', fileItem.notes);
+        formData.append('doc_type', docType);
+        if (notes) formData.append('notes', notes);
         
         await documentApi.upload(formData);
         successCount++;
       } catch (err) {
-        toast.error(`Document ${i + 1} failed: ${err.message}`);
+        toast.error(`File ${i + 1} failed: ${err.message}`);
       }
       setUploadProgress({ done: i + 1, total: files.length });
     }
 
     if (successCount > 0) {
       queryClient.invalidateQueries(['documents', patientId]);
+      queryClient.invalidateQueries(['patient', patientId]);
       queryClient.invalidateQueries('stats');
-      toast.success(`${successCount} of ${files.length} documents uploaded!`);
+      toast.success(`${successCount} document(s) uploaded successfully!`);
     }
     handleClose();
   };
@@ -119,79 +98,41 @@ export default function DocumentUpload({ patientId, open, onClose }) {
       <div className="space-y-4">
         {/* File Input Section */}
         {!isUploading && (
-          <>
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Document</h3>
-              
-              <CameraFileUploader 
-                file={tempFile} 
-                onChange={setTempFile} 
-                disabled={isUploading} 
-              />
+          <div className="space-y-4">
+            <CameraFileUploader 
+              files={files} 
+              onChange={setFiles} 
+              disabled={isUploading} 
+            />
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Select
-                label="Type" required
+                label="Document Type" required
                 error={errors.doc_type?.message}
-                className="mt-3"
                 {...register('doc_type', { required: 'Please select document type' })}
               >
                 <option value="">Select type...</option>
                 {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </Select>
 
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Notes (optional)</label>
-                <textarea
-                  rows={2}
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes (optional)</label>
+                <input
                   placeholder="Any additional notes..."
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none hover:border-gray-300"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300"
                   {...register('notes')}
                 />
               </div>
-
-              <Button 
-                type="button" 
-                onClick={handleAddFile}
-                className="w-full mt-3"
-                disabled={!tempFile}
-              >
-                <Upload size={14} /> Add to Queue
-              </Button>
             </div>
 
-            {/* Files Queue */}
             {files.length > 0 && (
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                  Documents Ready ({files.length})
-                </h3>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {files.map((f, idx) => (
-                    <div 
-                      key={f.id} 
-                      className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition"
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <File size={16} className="text-blue-600 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-700 truncate">{f.name || `Document ${idx + 1}`}</p>
-                          <p className="text-xs text-gray-500">{f.docType} • {DOC_TYPES.find(t => t.value === f.docType)?.label || f.docType}</p>
-                          {f.notes && <p className="text-xs text-gray-400 truncate italic">{f.notes}</p>}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeFile(f.id)}
-                        className="ml-2 p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition flex-shrink-0"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 text-center">
+                <p className="text-xs font-medium text-blue-700">
+                  You have <span className="font-bold">{files.length}</span> document(s) ready for upload.
+                </p>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* Upload Progress */}
