@@ -212,18 +212,28 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
       )}>
         <img src={logo} alt="Hospital Logo" className="w-full h-full object-cover rounded-full p-0.5" />
       </div>
-      <div className="space-y-2">
-        <h1 className="text-sm lg:text-base font-black leading-tight uppercase tracking-widest text-inherit">
-          JAIPRAKASH HOSPITAL <br className="lg:hidden" />
-          <span className="text-inherit opacity-90">&</span> RESEARCH CENTRE
-        </h1>
+      <div className="space-y-3">
+        <div className="flex flex-col items-center">
+          <h1 className="text-sm lg:text-base font-black leading-none uppercase tracking-[0.2em] text-inherit">
+            JAIPRAKASH HOSPITAL
+          </h1>
+          <div className="flex items-center gap-4 w-full my-1">
+            <div className="h-px flex-1 bg-current opacity-10" />
+            <span className="text-xs lg:text-sm font-black opacity-60">&</span>
+            <div className="h-px flex-1 bg-current opacity-10" />
+          </div>
+          <h1 className="text-sm lg:text-base font-black leading-none uppercase tracking-[0.2em] text-inherit">
+            RESEARCH CENTRE
+          </h1>
+        </div>
+
         {showSubtitle && (
-          <div className="flex flex-col items-center gap-1.5 mt-2">
-            <p className="text-[9px] font-black uppercase tracking-[0.4em] opacity-80 whitespace-nowrap">
+          <div className="flex flex-col items-center gap-2 pt-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-90 text-inherit">
               ROURKELA
             </p>
-            <div className="h-px w-12 bg-current opacity-20" />
-            <p className="text-[8px] font-extrabold uppercase tracking-[0.2em] opacity-60 max-w-[200px] leading-relaxed">
+            <div className="h-0.5 w-16 bg-blue-500 rounded-full" />
+            <p className="text-[9px] font-bold uppercase tracking-[0.15em] opacity-100 text-inherit whitespace-nowrap italic">
               "Quality Healthcare at Affordable Price"
             </p>
           </div>
