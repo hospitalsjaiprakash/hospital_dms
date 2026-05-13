@@ -9,11 +9,11 @@ import clsx from 'clsx';
 import logo from '../../assets/logo.webp';
 
 const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'hod', 'pcc'] },
-  { to: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'hod', 'pcc'] },
-  { to: '/documents', icon: FileText, label: 'Documents', roles: ['admin', 'hod', 'pcc'] },
-  { to: '/users', icon: Shield, label: 'Users', roles: ['admin'] },
-  { to: '/my-activity', icon: ClipboardList, label: 'My Activity', roles: ['hod', 'pcc'] },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'hod', 'pcc', 'nursing'] },
+  { to: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'hod', 'pcc', 'nursing'] },
+  { to: '/documents', icon: FileText, label: 'Documents', roles: ['admin', 'hod', 'pcc', 'nursing'] },
+  { to: '/users', icon: Shield, label: 'Users', roles: ['admin', 'hod'] },
+  { to: '/my-activity', icon: ClipboardList, label: 'My Activity', roles: ['hod', 'pcc', 'nursing'] },
   { to: '/audit-logs', icon: ClipboardList, label: 'Audit Logs', roles: ['admin', 'hod'] },
 ];
 
@@ -21,6 +21,7 @@ const roleColors = {
   admin: 'bg-red-100 text-red-700',
   hod: 'bg-purple-100 text-purple-700',
   pcc: 'bg-blue-100 text-blue-700',
+  nursing: 'bg-green-100 text-green-700',
 };
 
 export default function Layout() {
@@ -38,11 +39,12 @@ export default function Layout() {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-blue-700">
-        <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-contain flex-shrink-0" />
+      <div className="flex items-center gap-3 px-4 py-6 border-b border-blue-700">
+        <img src={logo} alt="Logo" className="w-12 h-12 rounded-full object-contain flex-shrink-0 border-2 border-blue-400/30 p-0.5" />
         <div className="min-w-0">
-          <h1 className="text-white font-bold text-base leading-tight uppercase tracking-widest">JPHRC</h1>
-          <p className="text-blue-200 text-[10px] uppercase tracking-widest mt-0.5">ROURKELA</p>
+          <h1 className="text-white font-black text-xl leading-none uppercase tracking-tighter whitespace-nowrap">
+            JPHRC <span className="text-blue-300 font-medium text-xs tracking-widest ml-1 opacity-80">ROURKELA</span>
+          </h1>
         </div>
       </div>
 
@@ -133,10 +135,11 @@ export default function Layout() {
               <Menu size={20} className="text-gray-600" />
             </button>
             <div className="flex items-center gap-2">
-              <img src={logo} alt="Logo" className="w-8 h-8 rounded-full object-contain" />
+              <img src={logo} alt="Logo" className="w-9 h-9 rounded-full object-contain border border-blue-100 p-0.5" />
               <div className="min-w-0">
-                <h1 className="font-bold text-blue-700 text-sm leading-tight uppercase tracking-widest">JPHRC</h1>
-                <p className="text-blue-600 text-[8px] uppercase tracking-widest">ROURKELA</p>
+                <h1 className="font-black text-blue-700 text-lg leading-none uppercase tracking-tighter whitespace-nowrap">
+                  JPHRC <span className="text-blue-500 font-bold text-[10px] tracking-widest ml-0.5">ROURKELA</span>
+                </h1>
               </div>
             </div>
           </div>

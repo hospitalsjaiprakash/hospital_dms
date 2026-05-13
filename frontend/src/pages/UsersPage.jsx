@@ -12,10 +12,10 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
-const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue' };
-const ROLE_LABELS = { admin: 'Administrator', hod: 'Head of Department', pcc: 'Patient Care Coordinator' };
+const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue', nursing: 'green' };
+const ROLE_LABELS = { admin: 'Administrator', hod: 'Head of Department', pcc: 'Patient Care Coordinator', nursing: 'Nursing Staff' };
 
-function AddUserModal({ open, onClose }) {
+function AddUserModal({ open, onClose, currentUser }) {
   const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
@@ -54,16 +54,12 @@ function AddUserModal({ open, onClose }) {
               {...register('role', { required: 'Role required' })}>
               <option value="">Select role...</option>
               <option value="pcc">PCC</option>
-              <option value="hod">HOD</option>
+              <option value="nursing">Nursing</option>
+              {currentUser?.role === 'admin' && <option value="hod">HOD</option>}
             </select>
             {errors.role && <p className="text-xs text-red-500">{errors.role.message}</p>}
           </div>
 
-          <div className="col-span-2 space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Department</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Admissions, General"
-              {...register('department')} />
-          </div>
 
           <div className="col-span-2 space-y-1">
             <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Password *</label>
@@ -120,12 +116,6 @@ function UserDetailsModal({ user, open, onClose }) {
             <div>
               <p className="text-xs text-gray-500 uppercase font-semibold">Employee ID</p>
               <p className="font-medium text-gray-900">{user.employee_id}</p>
-            </div>
-          )}
-          {user.department && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-semibold">Department</p>
-              <p className="font-medium text-gray-900">{user.department}</p>
             </div>
           )}
           <div className="col-span-2">
@@ -263,6 +253,7 @@ export default function UsersPage() {
             <option value="">All Roles</option>
             <option value="pcc">PCC</option>
             <option value="hod">HOD</option>
+            <option value="nursing">Nursing</option>
           </select>
         </div>
       </Card>
@@ -292,7 +283,6 @@ export default function UsersPage() {
                       )}
                     </div>
                     {u.role !== 'admin' && <p className="text-xs text-gray-400">{u.employee_id}</p>}
-                    {u.department && <p className="text-xs text-gray-400 truncate">{u.department}</p>}
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <Badge variant={ROLE_COLORS[u.role]}>{u.role.toUpperCase()}</Badge>
@@ -300,7 +290,7 @@ export default function UsersPage() {
                       <p className="text-xs text-gray-400 hidden sm:block">Last: {format(new Date(u.last_login), 'dd MMM, HH:mm')}</p>
                     )}
                   </div>
-                  {u.id !== currentUser?.id && (
+                  {u.id !== currentUser?.id && !(currentUser?.role === 'hod' && u.role === 'hod') && (
                     <button
                       onClick={(e) => { e.stopPropagation(); openConfirm(u); }}
                       className={clsx(
@@ -324,7 +314,7 @@ export default function UsersPage() {
         )}
       </Card>
 
-      <AddUserModal open={addUserOpen} onClose={() => setAddUserOpen(false)} />
+      <AddUserModal open={addUserOpen} onClose={() => setAddUserOpen(false)} currentUser={currentUser} />
       <UserDetailsModal user={selectedUser} open={!!selectedUser} onClose={() => setSelectedUser(null)} />
 
       <Modal

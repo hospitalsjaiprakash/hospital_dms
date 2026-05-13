@@ -69,9 +69,9 @@ export default function App() {
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
               <Route path="documents" element={<DocumentsPage />} />
-              <Route path="users" element={<ProtectedRoute roles={['admin']}><UsersPage /></ProtectedRoute>} />
+              <Route path="users" element={<ProtectedRoute roles={['admin', 'hod']}><UsersPage /></ProtectedRoute>} />
               <Route path="audit-logs" element={<ProtectedRoute roles={['admin', 'hod']}><AuditLogsPage /></ProtectedRoute>} />
-              <Route path="my-activity" element={<ProtectedRoute roles={['hod', 'pcc']}><AuditLogsPage /></ProtectedRoute>} />
+              <Route path="my-activity" element={<ProtectedRoute roles={['hod', 'pcc', 'nursing']}><AuditLogsPage /></ProtectedRoute>} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

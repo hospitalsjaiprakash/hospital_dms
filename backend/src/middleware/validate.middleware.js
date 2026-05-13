@@ -19,8 +19,7 @@ const schemas = {
     password: Joi.string().min(6).required(),
     name: Joi.string().min(2).max(200).required(),
     employee_id: Joi.string().min(3).max(50).required(),
-    role: Joi.string().valid('pcc', 'hod').required(),
-    department: Joi.string().max(100).optional().allow(''),
+    role: Joi.string().valid('pcc', 'hod', 'nursing').required(),
   }),
 
   login: Joi.object({
@@ -74,8 +73,7 @@ const schemas = {
   createUser: Joi.object({
     name: Joi.string().min(2).max(200).required(),
     employee_id: Joi.string().min(3).max(50).required(),
-    role: Joi.string().valid('pcc', 'hod', 'admin').required(),
-    department: Joi.string().max(100).optional().allow(''),
+    role: Joi.string().valid('pcc', 'hod', 'admin', 'nursing').required(),
     password: Joi.string().min(6).required(),
   }),
 };

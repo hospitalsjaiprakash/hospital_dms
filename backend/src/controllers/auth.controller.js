@@ -9,7 +9,7 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MIN = 15;
 
 const signup = async (req, res) => {
-  const { password, name, employee_id, role, department } = req.body;
+  const { password, name, employee_id, role } = req.body;
 
   // Check if already registered
   const existingUser = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
@@ -20,10 +20,10 @@ const signup = async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 12);
 
   const result = await db.query(
-    `INSERT INTO users (name, employee_id, password_hash, plain_password, role, department, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO users (name, employee_id, password_hash, plain_password, role, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, name, role, employee_id`,
-    [name, employee_id, passwordHash, password, role, department || null, false]
+    [name, employee_id, passwordHash, password, role, false]
   );
 
   const user = result.rows[0];
@@ -110,7 +110,7 @@ const login = async (req, res) => {
 
 const getMe = async (req, res) => {
   const userRes = await db.query(
-    'SELECT id, name, email, role, employee_id, department, last_login, created_at FROM users WHERE id = $1',
+    'SELECT id, name, email, role, employee_id, last_login, created_at FROM users WHERE id = $1',
     [req.user.id]
   );
   return sendSuccess(res, userRes.rows[0]);

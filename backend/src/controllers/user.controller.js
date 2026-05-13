@@ -17,10 +17,11 @@ const getUsers = async (req, res) => {
   if (status === 'active') {
     conditions.push(`is_active = true`);
   } else if (status === 'pending') {
-    // Pending users are accounts that were created but never activated or logged in.
-    conditions.push(`is_active = false AND last_login IS NULL AND updated_at = created_at`);
+    // Pending users: deactivated, never logged in, and not updated since creation (with 1s tolerance)
+    conditions.push(`is_active = false AND last_login IS NULL AND (updated_at <= created_at + interval '1 second')`);
   } else if (status === 'inactive') {
-    conditions.push(`is_active = false AND (last_login IS NOT NULL OR updated_at <> created_at)`);
+    // Inactive users: deactivated AND (either logged in before OR updated/deactivated after creation)
+    conditions.push(`is_active = false AND (last_login IS NOT NULL OR updated_at > created_at + interval '1 second')`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -28,7 +29,7 @@ const getUsers = async (req, res) => {
   const [countRes, usersRes] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM users ${where}`, params),
     db.query(
-      `SELECT id, name, role, employee_id, department, is_active, last_login, created_at, plain_password
+      `SELECT id, name, role, employee_id, is_active, last_login, created_at, plain_password
        FROM users ${where}
        ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, limit, offset]
@@ -39,7 +40,7 @@ const getUsers = async (req, res) => {
 };
 
 const createUser = async (req, res) => {
-  const { name, employee_id, role, department, password } = req.body;
+  const { name, employee_id, role, password } = req.body;
 
   const existing = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
   if (existing.rows.length) return sendError(res, 'Employee ID already exists', 409);
@@ -47,10 +48,10 @@ const createUser = async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 12);
 
   const result = await db.query(
-    `INSERT INTO users (name, employee_id, password_hash, plain_password, role, department, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, true)
-     RETURNING id, name, role, employee_id, department, is_active, created_at, plain_password`,
-    [name, employee_id, passwordHash, password, role, department || null]
+    `INSERT INTO users (name, employee_id, password_hash, plain_password, role, is_active)
+     VALUES ($1, $2, $3, $4, $5, true)
+     RETURNING id, name, role, employee_id, is_active, created_at, plain_password`,
+    [name, employee_id, passwordHash, password, role]
   );
 
   await auditLog(ACTIONS.USER_CREATE, 'user')(req, result.rows[0].id, null, { name, role });
@@ -65,6 +66,11 @@ const toggleUserStatus = async (req, res) => {
 
   const userRes = await db.query('SELECT * FROM users WHERE id = $1', [id]);
   if (!userRes.rows.length) return sendError(res, 'User not found', 404);
+
+  // Security: HODs can only manage PCCs, not other HODs
+  if (req.user.role === 'hod' && userRes.rows[0].role === 'hod') {
+    return sendError(res, 'HODs cannot manage other HOD accounts', 403);
+  }
 
   const newStatus = !userRes.rows[0].is_active;
   await db.query('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, id]);

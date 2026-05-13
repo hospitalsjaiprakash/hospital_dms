@@ -69,10 +69,10 @@ router.delete('/documents/:id', authenticate, documentCtrl.deleteDocument);
 router.post('/documents/bulk-delete', authenticate, documentCtrl.bulkDeleteDocuments);
 router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.exportPatientDocuments);
 
-// ── Users (Admin only) ──────────────────────────────────────────────────────
-router.get('/users', authenticate, authorize('admin'), userCtrl.getUsers);
-router.post('/users', authenticate, authorize('admin'), validate(schemas.createUser), userCtrl.createUser);
-router.patch('/users/:id/status', authenticate, authorize('admin'), userCtrl.toggleUserStatus);
+// ── Users (Admin & HOD) ──────────────────────────────────────────────────────
+router.get('/users', authenticate, authorize('admin', 'hod'), userCtrl.getUsers);
+router.post('/users', authenticate, authorize('admin', 'hod'), validate(schemas.createUser), userCtrl.createUser);
+router.patch('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
 
 // ── Audit Logs (Admin & HOD) ────────────────────────────────────────────────
 router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc'), auditCtrl.getLogs);

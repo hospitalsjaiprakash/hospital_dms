@@ -48,7 +48,7 @@ export default function SignupPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div className="space-y-1">
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider ml-1 mb-1.5">Role *</label>
               <div className="relative">
@@ -57,6 +57,7 @@ export default function SignupPage() {
                   <option value="">Select...</option>
                   <option value="pcc">PCC</option>
                   <option value="hod">HOD</option>
+                  <option value="nursing">Nursing</option>
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                   <ArrowRight size={14} className="rotate-90" />
@@ -64,12 +65,6 @@ export default function SignupPage() {
               </div>
               {errors.role && <p className="text-xs text-red-500 mt-1 ml-1">{errors.role.message}</p>}
             </div>
-            <Input
-              label="Department" placeholder="e.g. General"
-              className="!bg-gray-50/50 !border-gray-200 focus:!bg-white shadow-sm !py-3"
-              error={errors.department?.message}
-              {...register('department')}
-            />
           </div>
 
           <div className="space-y-1">
