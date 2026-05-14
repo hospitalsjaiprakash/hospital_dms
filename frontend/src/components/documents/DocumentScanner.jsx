@@ -6,7 +6,22 @@ import {
 } from 'lucide-react';
 import { Button } from '../common';
 import toast from 'react-hot-toast';
-import { Reorder } from 'framer-motion';
+import {
+  DndContext,
+  closestCenter,
+  TouchSensor,
+  MouseSensor,
+  useSensor,
+  useSensors,
+  DragOverlay
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ── OpenCV Helper Functions ──────────────────────────────────────────────────
 
@@ -51,6 +66,57 @@ function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetH
   return dstCanvas;
 }
 
+// ── Sortable Item Component for Review Grid ──────────────────────────────────
+function SortablePage({ page, index, onPreview, onDelete }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: page.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0 : 1, // Hide original when dragging (overlay is shown)
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="relative w-full aspect-[3/4] flex-shrink-0 touch-none outline-none"
+    >
+      <button
+        type="button"
+        onPointerDown={(e) => { e.stopPropagation(); }} // Important: so clicking doesn't start drag immediately
+        onClick={() => onPreview(page.preview)}
+        className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200 group relative"
+      >
+        <img src={page.preview} className="w-full h-full object-cover pointer-events-none" alt={`Page ${index + 1}`} />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
+          <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
+        </div>
+        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm pointer-events-none">
+          {index + 1}
+        </div>
+      </button>
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()} // Prevent drag start when hitting delete
+        onClick={(e) => { e.stopPropagation(); onDelete(index); }}
+        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md hover:bg-red-600 transition-colors z-10"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 export default function DocumentScanner({ onComplete, onClose }) {
   // ── Global step state ───────────────────────────────────────────────────────
   const [step, setStep] = useState('camera'); // 'camera' | 'crop' | 'review'
@@ -63,6 +129,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [videoReady, setVideoReady] = useState(false);
   const [cvReady, setCvReady] = useState(false);
   const [magnifier, setMagnifier] = useState(null);
+  const [activeId, setActiveId] = useState(null); // For drag overlay
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -564,6 +631,33 @@ export default function DocumentScanner({ onComplete, onClose }) {
   };
 
   // ── RENDER: Review ──────────────────────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 10 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    })
+  );
+
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setPages((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+    setActiveId(null);
+  };
+
+  const activePage = activeId ? pages.find(p => p.id === activeId) : null;
+
   const renderReview = () => (
     <div className="h-full flex flex-col bg-gray-50">
       <div className="px-5 py-4 bg-white border-b flex items-center justify-between shadow-sm">
@@ -579,41 +673,45 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
         {pages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
             <FileText size={48} className="opacity-30" />
             <p className="text-sm font-medium">No pages scanned yet</p>
           </div>
         ) : (
-          <Reorder.Group axis="y" values={pages} onReorder={setPages} className="grid grid-cols-2 gap-4 m-0 p-0 list-none">
-            {pages.map((page, index) => (
-              <Reorder.Item
-                key={page.id}
-                value={page}
-                className="relative w-full aspect-[3/4] flex-shrink-0 touch-none cursor-grab active:cursor-grabbing"
-              >
-                <button
-                  onClick={() => setPreviewPage(page.preview)}
-                  className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200 group relative"
-                >
-                  <img src={page.preview} className="w-full h-full object-cover" alt={`Page ${index + 1}`} />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                    <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
+          <DndContext 
+            sensors={sensors} 
+            collisionDetection={closestCenter} 
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={pages.map(p => p.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-2 gap-4 m-0 p-0 list-none px-1">
+                {pages.map((page, index) => (
+                  <SortablePage 
+                    key={page.id} 
+                    page={page} 
+                    index={index} 
+                    onPreview={setPreviewPage} 
+                    onDelete={deletePage} 
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay zIndex={1000}>
+              {activeId && activePage ? (
+                <div className="relative w-full aspect-[3/4] flex-shrink-0 cursor-grabbing shadow-2xl scale-105 opacity-90">
+                  <div className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border-2 border-blue-500">
+                    <img src={activePage.preview} className="w-full h-full object-cover" alt="Dragging" />
+                    <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
+                      {pages.findIndex(p => p.id === activeId) + 1}
+                    </div>
                   </div>
-                  <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
-                    {index + 1}
-                  </div>
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deletePage(index); }}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md hover:bg-red-600 transition-colors z-10"
-                >
-                  <X size={14} />
-                </button>
-              </Reorder.Item>
-            ))}
-          </Reorder.Group>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
 
         <button
