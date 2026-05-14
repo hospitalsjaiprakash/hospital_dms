@@ -37,6 +37,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [stagedPhoto, setStagedPhoto] = useState(null);
   const [gpsData, setGpsData] = useState(null);
   const [address, setAddress] = useState(null);
   const [fetchingGps, setFetchingGps] = useState(false);
@@ -261,20 +262,13 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       const rawFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
-      // In single mode, stop camera before compressing
-      if (isLegacySingle || single) stopCamera();
-
       setCompressing(true);
       const compressed = await imageCompression(rawFile, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
       const newEntry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
 
-      if (isLegacySingle || single) {
-        handleChange([newEntry]);
-      } else {
-        const updated = [...files, newEntry];
-        handleChange(updated);
-        toast.success(`Photo ${updated.length} captured! 📷`, { duration: 1200 });
-      }
+      setStagedPhoto(newEntry);
+      setCompressing(false);
+      setCapturing(false);
     } catch (err) {
       console.error('Capture error:', err);
       toast.error('Capture failed — please try again');
@@ -329,6 +323,41 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
   // ── Camera View (Rendered via Portal for true full-screen) ──────────────────
   if (mode === 'camera') {
+    if (stagedPhoto) {
+      return createPortal(
+        <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col h-[100dvh] w-full overflow-hidden touch-none">
+          <div className="flex-1 relative bg-black flex items-center justify-center">
+            <img src={stagedPhoto.preview} alt="Captured preview" className="w-full h-full object-contain" />
+          </div>
+          <div className="h-28 bg-gray-900 border-t border-white/10 flex items-center justify-around px-4">
+            <button
+              onClick={() => setStagedPhoto(null)}
+              className="text-white/70 font-bold px-6 py-3 rounded-xl hover:bg-white/10 transition-colors"
+            >
+              Retake
+            </button>
+            <Button
+              className="px-8 py-3 rounded-xl shadow-lg"
+              onClick={() => {
+                if (isLegacySingle || single) {
+                  handleChange([stagedPhoto]);
+                  stopCamera();
+                } else {
+                  const updated = [...files, stagedPhoto];
+                  handleChange(updated);
+                  setStagedPhoto(null);
+                  toast.success(`Photo ${updated.length} captured! 📷`, { duration: 1200 });
+                }
+              }}
+            >
+              <CheckCircle size={20} className="mr-2" /> Done
+            </Button>
+          </div>
+        </div>,
+        document.body
+      );
+    }
+
     return createPortal(
       <div className="fixed inset-0 z-[9999] bg-black flex flex-col h-[100dvh] w-full overflow-hidden touch-none">
         {/* Video Preview */}
@@ -349,33 +378,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             </div>
           )}
 
-          {/* Viewfinder Overlay (Rule of Thirds + Crosshair) */}
-          {videoReady && (
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20">
-                <div className="border-r border-b border-white" />
-                <div className="border-r border-b border-white" />
-                <div className="border-b border-white" />
-                <div className="border-r border-b border-white" />
-                <div className="border-r border-b border-white" />
-                <div className="border-b border-white" />
-                <div className="border-r border-white" />
-                <div className="border-r border-white" />
-                <div className="" />
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-16 h-16 flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-ping opacity-80" />
-                  <div className="absolute w-4 h-16 border-l border-r border-yellow-400/30" />
-                  <div className="absolute w-16 h-4 border-t border-b border-yellow-400/30" />
-                  <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-yellow-400 opacity-60" />
-                  <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-yellow-400 opacity-60" />
-                  <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-yellow-400 opacity-60" />
-                  <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-yellow-400 opacity-60" />
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {/* GPS Live Tagging Overlay */}
           {videoReady && (
