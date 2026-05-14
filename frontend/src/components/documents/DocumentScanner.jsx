@@ -78,9 +78,10 @@ function SortablePage({ page, index, onPreview, onDelete }) {
   } = useSortable({ id: page.id });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0 : 1, // Hide original when dragging (overlay is shown)
+    zIndex: isDragging ? 50 : 1,
+    opacity: isDragging ? 0.2 : 1, // Dim the original as a placeholder
   };
 
   return (
@@ -633,10 +634,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
   // ── RENDER: Review ──────────────────────────────────────────────────────────
   const sensors = useSensors(
     useSensor(MouseSensor, {
-      activationConstraint: { distance: 10 },
+      activationConstraint: { distance: 5 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
+      activationConstraint: { distance: 5 },
     })
   );
 
@@ -699,9 +700,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 ))}
               </div>
             </SortableContext>
-            <DragOverlay zIndex={1000}>
+            <DragOverlay zIndex={99999}>
               {activeId && activePage ? (
-                <div className="relative w-full aspect-[3/4] flex-shrink-0 cursor-grabbing shadow-2xl scale-105 opacity-90">
+                <div className="relative w-full h-full flex-shrink-0 cursor-grabbing shadow-2xl scale-105 opacity-100">
                   <div className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border-2 border-blue-500">
                     <img src={activePage.preview} className="w-full h-full object-cover" alt="Dragging" />
                     <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
