@@ -7,17 +7,46 @@ import {
 import { Button } from '../common';
 import toast from 'react-hot-toast';
 
-// ── Perspective crop (bounding-box crop) ─────────────────────────────────────
-function applyPerspectiveTransform(srcCanvas, points, width, height) {
+// ── OpenCV Helper Functions ──────────────────────────────────────────────────
+
+function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetHeight) {
+  let src = cv.imread(srcCanvas);
+  let dst = new cv.Mat();
+  let dsize = new cv.Size(targetWidth, targetHeight);
+
+  // Construct source points
+  let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    points[0].x, points[0].y,
+    points[1].x, points[1].y,
+    points[2].x, points[2].y,
+    points[3].x, points[3].y
+  ]);
+
+  // Construct target points
+  let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    targetWidth, 0,
+    targetWidth, targetHeight,
+    0, targetHeight
+  ]);
+
+  // Get transformation matrix and warp
+  let M = cv.getPerspectiveTransform(srcTri, dstTri);
+  cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+  // Create destination canvas
   const dstCanvas = document.createElement('canvas');
-  dstCanvas.width = width;
-  dstCanvas.height = height;
-  const ctx = dstCanvas.getContext('2d');
-  const minX = Math.min(...points.map(p => p.x));
-  const minY = Math.min(...points.map(p => p.y));
-  const maxX = Math.max(...points.map(p => p.x));
-  const maxY = Math.max(...points.map(p => p.y));
-  ctx.drawImage(srcCanvas, minX, minY, maxX - minX, maxY - minY, 0, 0, width, height);
+  dstCanvas.width = targetWidth;
+  dstCanvas.height = targetHeight;
+  cv.imshow(dstCanvas, dst);
+
+  // Cleanup
+  src.delete();
+  dst.delete();
+  M.delete();
+  srcTri.delete();
+  dstTri.delete();
+
   return dstCanvas;
 }
 
@@ -30,6 +59,8 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [flash, setFlash] = useState(false);
   const [previewPage, setPreviewPage] = useState(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [cvReady, setCvReady] = useState(false);
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -39,12 +70,35 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const cropContainerRef = useRef(null);
   const draggingIdxRef = useRef(null);
 
+  // ── OpenCV initialization ───────────────────────────────────────────────────
+  useEffect(() => {
+    const checkCV = () => {
+      if (window.cv && window.cv.Mat) {
+        setCvReady(true);
+      } else {
+        setTimeout(checkCV, 500);
+      }
+    };
+    checkCV();
+  }, []);
+
   // ── Camera lifecycle ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (step === 'camera') startCamera();
-    else stopCamera();
+    if (step === 'camera') {
+      setVideoReady(false);
+      startCamera();
+    } else {
+      stopCamera();
+    }
     return () => stopCamera();
   }, [step]);
+
+  const videoCallbackRef = useCallback((el) => {
+    videoRef.current = el;
+    if (el && streamRef.current) {
+      el.srcObject = streamRef.current;
+    }
+  }, []);
 
   const startCamera = async () => {
     try {
@@ -61,16 +115,16 @@ export default function DocumentScanner({ onComplete, onClose }) {
   };
 
   const stopCamera = () => {
+    setVideoReady(false);
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
   };
 
-  // ── Capture ─────────────────────────────────────────────────────────────────
+  // ── Capture & Auto-detect Edges ─────────────────────────────────────────────
   const capturePhoto = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
 
-    // Flash effect
     setFlash(true);
     setTimeout(() => setFlash(false), 250);
 
@@ -82,14 +136,89 @@ export default function DocumentScanner({ onComplete, onClose }) {
     canvas.toBlob(blob => {
       if (!blob) { toast.error('Capture failed'); return; }
       const url = URL.createObjectURL(blob);
-      setCurrentOriginal({ blob, url, width: canvas.width, height: canvas.height });
-      const w = canvas.width, h = canvas.height;
-      setPoints([
-        { x: w * 0.08, y: h * 0.08 },
-        { x: w * 0.92, y: h * 0.08 },
-        { x: w * 0.92, y: h * 0.92 },
-        { x: w * 0.08, y: h * 0.92 },
-      ]);
+      const w = canvas.width;
+      const h = canvas.height;
+      
+      setCurrentOriginal({ blob, url, width: w, height: h });
+      
+      // Default crop if CV fails
+      let bestPoints = [
+        { x: w * 0.1, y: h * 0.1 },
+        { x: w * 0.9, y: h * 0.1 },
+        { x: w * 0.9, y: h * 0.9 },
+        { x: w * 0.1, y: h * 0.9 },
+      ];
+
+      // Auto edge detection if OpenCV is loaded
+      if (cvReady && window.cv) {
+        try {
+          const cv = window.cv;
+          let src = cv.imread(canvas);
+          let gray = new cv.Mat();
+          let blur = new cv.Mat();
+          let edges = new cv.Mat();
+          
+          cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+          cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+          cv.Canny(blur, edges, 75, 200);
+
+          let contours = new cv.MatVector();
+          let hierarchy = new cv.Mat();
+          cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+          // Find largest quadrilateral
+          let maxArea = 0;
+          let bestContour = null;
+
+          for (let i = 0; i < contours.size(); ++i) {
+            let cnt = contours.get(i);
+            let area = cv.contourArea(cnt);
+            if (area > 50000) { // minimum area threshold
+              let peri = cv.arcLength(cnt, true);
+              let approx = new cv.Mat();
+              cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+              
+              if (approx.rows === 4 && area > maxArea) {
+                maxArea = area;
+                if (bestContour) bestContour.delete();
+                bestContour = approx.clone();
+              }
+              approx.delete();
+            }
+          }
+
+          if (bestContour) {
+            // Convert to array and sort points: top-left, top-right, bottom-right, bottom-left
+            const pts = [];
+            for (let i = 0; i < 4; i++) {
+              pts.push({
+                x: bestContour.data32S[i * 2],
+                y: bestContour.data32S[i * 2 + 1]
+              });
+            }
+            
+            // Order points
+            const center = pts.reduce((acc, p) => ({ x: acc.x + p.x / 4, y: acc.y + p.y / 4 }), { x: 0, y: 0 });
+            const tl = pts.find(p => p.x < center.x && p.y < center.y);
+            const tr = pts.find(p => p.x > center.x && p.y < center.y);
+            const br = pts.find(p => p.x > center.x && p.y > center.y);
+            const bl = pts.find(p => p.x < center.x && p.y > center.y);
+
+            // Only use if we successfully identified all 4 corners logically
+            if (tl && tr && br && bl) {
+               bestPoints = [tl, tr, br, bl];
+            }
+            bestContour.delete();
+          }
+
+          src.delete(); gray.delete(); blur.delete(); edges.delete();
+          contours.delete(); hierarchy.delete();
+        } catch (e) {
+          console.error("OpenCV Auto-crop failed, falling back to default", e);
+        }
+      }
+
+      setPoints(bestPoints);
       setStep('crop');
     }, 'image/jpeg', 0.92);
   };
@@ -138,15 +267,32 @@ export default function DocumentScanner({ onComplete, onClose }) {
       srcCanvas.height = currentOriginal.height;
       srcCanvas.getContext('2d').drawImage(img, 0, 0);
 
-      const minX = Math.min(...points.map(p => p.x));
-      const minY = Math.min(...points.map(p => p.y));
-      const maxX = Math.max(...points.map(p => p.x));
-      const maxY = Math.max(...points.map(p => p.y));
-      const targetW = 1200;
-      const targetH = ((maxY - minY) / (maxX - minX)) * targetW;
+      // Target aspect ratio logic (approx A4)
+      const tl = points[0], tr = points[1], br = points[2], bl = points[3];
+      const widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+      const widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
+      const targetW = Math.max(widthTop, widthBottom);
+      
+      const heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+      const heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+      const targetH = Math.max(heightLeft, heightRight);
 
-      const dst = applyPerspectiveTransform(srcCanvas, points, targetW, targetH);
-      dst.toBlob(blob => {
+      // Use OpenCV if available, else fallback to standard canvas scaling
+      let dstCanvas;
+      if (cvReady && window.cv) {
+        dstCanvas = applyPerspectiveTransformCV(window.cv, srcCanvas, points, targetW, targetH);
+      } else {
+        dstCanvas = document.createElement('canvas');
+        dstCanvas.width = targetW; dstCanvas.height = targetH;
+        const ctx = dstCanvas.getContext('2d');
+        const minX = Math.min(tl.x, bl.x);
+        const minY = Math.min(tl.y, tr.y);
+        const maxX = Math.max(tr.x, br.x);
+        const maxY = Math.max(bl.y, br.y);
+        ctx.drawImage(srcCanvas, minX, minY, maxX - minX, maxY - minY, 0, 0, targetW, targetH);
+      }
+
+      dstCanvas.toBlob(blob => {
         const preview = URL.createObjectURL(blob);
         setPages(prev => [...prev, { id: Date.now(), originalBlob: currentOriginal.blob, croppedBlob: blob, preview }]);
         toast.success(`Page ${pages.length + 1} scanned! ✅`);
@@ -216,14 +362,25 @@ export default function DocumentScanner({ onComplete, onClose }) {
   // ── RENDER: Camera ──────────────────────────────────────────────────────────
   const renderCamera = () => (
     <div className="relative h-full flex flex-col bg-black">
-      {/* Flash overlay */}
       {flash && <div className="absolute inset-0 bg-white z-50 pointer-events-none" style={{ opacity: 0.7 }} />}
 
-      {/* Video feed */}
       <div className="relative flex-1 overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        <video
+          ref={videoCallbackRef}
+          autoPlay
+          playsInline
+          muted
+          onCanPlay={() => setVideoReady(true)}
+          className="w-full h-full object-cover"
+        />
 
-        {/* Scan guide overlay */}
+        {!videoReady && (
+          <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-3">
+            <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-white text-xs font-semibold tracking-wider">Starting camera...</p>
+          </div>
+        )}
+
         <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 60px rgba(0,0,0,0.45)' }}>
           <div className="absolute inset-[60px] border border-white/30 rounded-lg">
             <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-sm" />
@@ -233,7 +390,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         </div>
 
-        {/* Top label */}
         <div className="absolute top-4 left-0 right-0 flex justify-center">
           <span className="bg-black/50 backdrop-blur-sm px-4 py-1.5 rounded-full text-white text-xs font-semibold tracking-wider">
             📄 Position document in frame
@@ -241,7 +397,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </div>
       </div>
 
-      {/* Bottom controls */}
       <div className="h-32 bg-black flex items-center justify-around px-6 border-t border-white/10">
         <button
           onClick={onClose}
@@ -250,17 +405,18 @@ export default function DocumentScanner({ onComplete, onClose }) {
           Cancel
         </button>
 
-        {/* Shutter button */}
         <button
           onClick={capturePhoto}
-          className="w-20 h-20 rounded-full border-4 border-white p-1.5 active:scale-95 transition-transform"
+          disabled={!videoReady}
+          className="w-20 h-20 rounded-full border-4 border-white p-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:scale-100"
         >
           <div className="w-full h-full bg-white rounded-full flex items-center justify-center shadow-lg">
-            <Scan className="text-black w-8 h-8" />
+            {videoReady
+              ? <Scan className="text-black w-8 h-8" />
+              : <div className="w-6 h-6 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin" />}
           </div>
         </button>
 
-        {/* Thumbnail of last scanned page */}
         <button
           onClick={() => pages.length > 0 && setStep('review')}
           className="relative w-14 h-14"
@@ -292,13 +448,11 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
     return (
       <div className="h-full flex flex-col bg-gray-950">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-white/10">
           <span className="text-white font-bold text-sm">✂️ Adjust Crop</span>
           <span className="text-xs text-gray-400">Drag corners to select document area</span>
         </div>
 
-        {/* Image + crop handles */}
         <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-4">
           <div
             ref={cropContainerRef}
@@ -317,9 +471,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
               alt="captured"
             />
 
-            {/* SVG overlay */}
             <svg className="absolute inset-0 w-full h-full overflow-visible">
-              {/* Dark mask outside polygon */}
               <defs>
                 <mask id="cropMask">
                   <rect width="100%" height="100%" fill="white" />
@@ -331,7 +483,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
               </defs>
               <rect width="100%" height="100%" fill="rgba(0,0,0,0.5)" mask="url(#cropMask)" />
 
-              {/* Selection polygon */}
               <polygon
                 points={points.map(p => `${toPercent(p.x, iw)},${toPercent(p.y, ih)}`).join(' ')}
                 fill="rgba(59,130,246,0.15)"
@@ -339,7 +490,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 strokeWidth="2"
               />
 
-              {/* Edge lines */}
               {points.map((p, i) => {
                 const next = points[(i + 1) % 4];
                 return (
@@ -352,7 +502,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 );
               })}
 
-              {/* Corner handles */}
               {points.map((p, i) => (
                 <g key={`handle-${i}`}>
                   <circle
@@ -386,7 +535,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         </div>
 
-        {/* Footer controls */}
         <div className="h-24 bg-gray-900 border-t border-white/10 flex items-center justify-between px-6">
           <button
             onClick={() => setStep('camera')}
@@ -405,7 +553,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
   // ── RENDER: Review ──────────────────────────────────────────────────────────
   const renderReview = () => (
     <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="px-5 py-4 bg-white border-b flex items-center justify-between shadow-sm">
         <h2 className="font-bold text-gray-800 flex items-center gap-2">
           <FileText className="text-blue-600" size={18} />
@@ -419,7 +566,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </button>
       </div>
 
-      {/* Page list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {pages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
@@ -432,7 +578,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
               key={page.id}
               className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex gap-3 p-3"
             >
-              {/* Thumbnail */}
               <button
                 onClick={() => setPreviewPage(page.preview)}
                 className="relative w-24 h-32 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 border border-gray-200 group"
@@ -443,7 +588,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 </div>
               </button>
 
-              {/* Info + controls */}
               <div className="flex-1 flex flex-col justify-between py-1">
                 <div>
                   <p className="text-xs font-black text-blue-600 uppercase tracking-wider">Page {index + 1}</p>
@@ -480,7 +624,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
           ))
         )}
 
-        {/* Add more */}
         <button
           onClick={() => setStep('camera')}
           className="w-full py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-600 text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors"
@@ -489,7 +632,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </button>
       </div>
 
-      {/* Footer */}
       <div className="p-5 bg-white border-t space-y-3">
         <Button
           onClick={finishScan}
@@ -501,7 +643,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </Button>
       </div>
 
-      {/* Full-page preview modal */}
       {previewPage && (
         <div
           className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
@@ -519,7 +660,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
     </div>
   );
 
-  // ── Root Portal ─────────────────────────────────────────────────────────────
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-black flex flex-col overflow-hidden touch-none"
       style={{ height: '100dvh' }}
