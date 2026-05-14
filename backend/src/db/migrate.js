@@ -255,6 +255,18 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_patients_status_created ON patients(hospital_status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_patients_settlement_created ON patients(settlement_status, created_at DESC);
     `
+  },
+  {
+    name: '015_add_new_doc_categories',
+    sql: `
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'pre_op';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'post_op';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'intra_op';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'bedside';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'procedure';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'specimen';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'dressing';
+    `
   }
 ];
 

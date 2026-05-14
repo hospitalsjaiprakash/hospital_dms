@@ -15,6 +15,7 @@ import DocumentActionModal from '../components/documents/DocumentActionModal';
 import { useDebounce } from '../hooks/useDebounce';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import ReactSelect from 'react-select';
 
 export default function DocumentsPage() {
   const location = useLocation();
@@ -103,16 +104,33 @@ export default function DocumentsPage() {
             />
           </div>
           
-          <select 
-            value={docTypeFilter} 
-            onChange={(e) => { setDocTypeFilter(e.target.value); setPage(1); }}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[160px]"
-          >
-            <option value="">All Document Types</option>
-            {Object.entries(DOC_TYPE_LABELS).map(([val, label]) => (
-              <option key={val} value={val}>{label}</option>
-            ))}
-          </select>
+          <div className="w-full md:w-56 z-10">
+            <ReactSelect 
+              options={[
+                { value: '', label: 'All Document Types' },
+                ...Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }))
+              ]}
+              value={
+                docTypeFilter === '' 
+                  ? { value: '', label: 'All Document Types' } 
+                  : { value: docTypeFilter, label: DOC_TYPE_LABELS[docTypeFilter] }
+              }
+              onChange={(val) => { setDocTypeFilter(val.value); setPage(1); }}
+              placeholder="Search categories..."
+              className="text-sm"
+              styles={{
+                control: (base, state) => ({
+                  ...base,
+                  borderColor: state.isFocused ? '#3b82f6' : '#e5e7eb',
+                  borderRadius: '0.5rem',
+                  minHeight: '38px',
+                  boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                  '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                }),
+                menu: (base) => ({ ...base, zIndex: 50 })
+              }}
+            />
+          </div>
 
           {(search || docTypeFilter) && (
             <button

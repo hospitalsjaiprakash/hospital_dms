@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useForm } from 'react-hook-form';
+import ReactSelect from 'react-select';
 
 // --- CONFIGURATION ---
 const API_URL = window.location.hostname === 'localhost' 
@@ -616,39 +617,33 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        {/* Desktop Categories */}
-        <div className="hidden sm:flex gap-2 flex-wrap mb-4">
-          {['all', ...Object.keys(DOC_TYPE_LABELS)].map((type) => (
-            <button
-              key={type}
-              onClick={() => { setActiveDocType(type); setDocPage(1); }}
-              className={clsx(
-                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                activeDocType === type
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
-              )}
-            >
-              {activeDocType === type
-                ? `${type === 'all' ? 'All' : DOC_TYPE_LABELS[type]} (${docsPagination?.total ?? 0})`
-                : type === 'all'
-                  ? `All`
-                  : DOC_TYPE_LABELS[type]}
-            </button>
-          ))}
-        </div>
-
-        {/* Mobile Category Dropdown */}
-        <div className="sm:hidden mb-4">
-          <Select 
-            value={activeDocType} 
-            onChange={(e) => { setActiveDocType(e.target.value); setDocPage(1); }}
-          >
-            <option value="all">All Documents ({docsPagination?.total ?? 0})</option>
-            {Object.entries(DOC_TYPE_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </Select>
+        {/* Document Category Filter */}
+        <div className="mb-4 sm:max-w-xs relative z-10">
+          <ReactSelect 
+            options={[
+              { value: 'all', label: `All Documents (${docsPagination?.total ?? 0})` },
+              ...Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }))
+            ]}
+            value={
+              activeDocType === 'all' 
+                ? { value: 'all', label: `All Documents (${docsPagination?.total ?? 0})` } 
+                : { value: activeDocType, label: DOC_TYPE_LABELS[activeDocType] }
+            }
+            onChange={(val) => { setActiveDocType(val.value); setDocPage(1); }}
+            placeholder="Search categories..."
+            className="text-sm"
+            styles={{
+              control: (base, state) => ({
+                ...base,
+                borderColor: state.isFocused ? '#3b82f6' : '#e5e7eb',
+                borderRadius: '0.5rem',
+                minHeight: '40px',
+                boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+              }),
+              menu: (base) => ({ ...base, zIndex: 50 })
+            }}
+          />
         </div>
 
         {docsLoading ? (

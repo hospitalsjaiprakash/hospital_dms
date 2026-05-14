@@ -1,22 +1,16 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from 'react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
+import ReactSelect from 'react-select';
 import { documentApi } from '../../services/api';
 import { Button, Select, Modal } from '../common';
 import CameraFileUploader from './CameraFileUploader';
+import { DOC_TYPE_LABELS } from './constants';
 import { Upload, X, File } from 'lucide-react';
 import toast from 'react-hot-toast';
+import clsx from 'clsx';
 
-const DOC_TYPES = [
-  { value: 'id_proof', label: 'ID Proof' },
-  { value: 'ayushman_card', label: 'Ayushman Card' },
-  { value: 'admission_photo', label: 'Admission Photo' },
-  { value: 'prescription', label: 'Prescription' },
-  { value: 'lab_reports', label: 'Lab Reports' },
-  { value: 'scans', label: 'Scans / Radiology' },
-  { value: 'discharge_summary', label: 'Discharge Summary' },
-  { value: 'other', label: 'Other' },
-];
+const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 export default function DocumentUpload({ patientId, open, onClose }) {
   const queryClient = useQueryClient();
@@ -24,8 +18,8 @@ export default function DocumentUpload({ patientId, open, onClose }) {
   const [tempFile, setTempFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
   
-  const { register, handleSubmit, formState: { errors }, reset, watch } = useForm({
-    defaultValues: { doc_type: 'other', notes: '' }
+  const { register, handleSubmit, control, formState: { errors }, reset, watch } = useForm({
+    defaultValues: { doc_type: '', notes: '' }
   });
 
   const docType = watch('doc_type');
@@ -105,24 +99,51 @@ export default function DocumentUpload({ patientId, open, onClose }) {
               disabled={isUploading} 
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Select
-                label="Document Type" required
-                error={errors.doc_type?.message}
-                {...register('doc_type', { required: 'Please select document type' })}
-              >
-                <option value="">Select type...</option>
-                {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </Select>
-
+            <div className={clsx("grid gap-3", docType === 'other' ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes (optional)</label>
-                <input
-                  placeholder="Any additional notes..."
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300"
-                  {...register('notes')}
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                <Controller
+                  name="doc_type"
+                  control={control}
+                  rules={{ required: 'Please select document type' }}
+                  render={({ field }) => (
+                    <ReactSelect
+                      {...field}
+                      options={DOC_TYPES}
+                      value={DOC_TYPES.find(c => c.value === field.value) || null}
+                      onChange={val => field.onChange(val.value)}
+                      placeholder="Search or select type..."
+                      className="text-sm"
+                      styles={{
+                        control: (base, state) => ({
+                          ...base,
+                          borderColor: errors.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                          borderRadius: '0.5rem',
+                          minHeight: '42px',
+                          boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                          '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                        })
+                      }}
+                    />
+                  )}
                 />
+                {errors.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
               </div>
+
+              {docType === 'other' && (
+                <div className="space-y-1 animate-fade-in">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Specify Document / Reason *</label>
+                  <input
+                    placeholder="Enter document reason or type..."
+                    className={clsx(
+                      "w-full rounded-lg border px-3 py-2 min-h-[42px] text-sm focus:ring-2 focus:border-transparent outline-none transition-colors",
+                      errors.notes ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                    )}
+                    {...register('notes', { required: 'Please specify the document type or reason' })}
+                  />
+                  {errors.notes && <p className="text-xs text-red-500 mt-1">{errors.notes.message}</p>}
+                </div>
+              )}
             </div>
 
             {files.length > 0 && (
