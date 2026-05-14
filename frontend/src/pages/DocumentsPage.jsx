@@ -104,7 +104,7 @@ export default function DocumentsPage() {
             />
           </div>
           
-          <div className="w-full md:w-56 z-10">
+          <div className="w-full md:w-56 z-50">
             <ReactSelect 
               options={[
                 { value: '', label: 'All Document Types' },

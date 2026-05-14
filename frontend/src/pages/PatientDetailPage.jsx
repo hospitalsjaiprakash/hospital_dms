@@ -618,7 +618,7 @@ export default function PatientDetailPage() {
         </div>
 
         {/* Document Category Filter */}
-        <div className="mb-4 sm:max-w-xs relative z-10">
+        <div className="mb-4 sm:max-w-xs relative z-50">
           <ReactSelect 
             options={[
               { value: 'all', label: `All Documents (${docsPagination?.total ?? 0})` },
