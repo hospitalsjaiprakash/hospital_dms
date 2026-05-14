@@ -244,6 +244,17 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_patients_discharge_date ON patients(discharge_date);
       CREATE INDEX IF NOT EXISTS idx_patients_settlement_date ON patients(settlement_date);
     `
+  },
+  {
+    name: '014_optimize_patients_indexes',
+    sql: `
+      -- Index to speed up default frontend sorting by newest first
+      CREATE INDEX IF NOT EXISTS idx_patients_created_at ON patients(created_at DESC);
+      
+      -- Composite indexes for fast filtering + sorting on the dashboard
+      CREATE INDEX IF NOT EXISTS idx_patients_status_created ON patients(hospital_status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_patients_settlement_created ON patients(settlement_status, created_at DESC);
+    `
   }
 ];
 
