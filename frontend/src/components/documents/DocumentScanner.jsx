@@ -586,40 +586,31 @@ export default function DocumentScanner({ onComplete, onClose }) {
             <p className="text-sm font-medium">No pages scanned yet</p>
           </div>
         ) : (
-          <Reorder.Group axis="y" values={pages} onReorder={setPages} className="space-y-3 m-0 p-0 list-none">
+          <Reorder.Group axis="y" values={pages} onReorder={setPages} className="grid grid-cols-2 gap-4 m-0 p-0 list-none">
             {pages.map((page, index) => (
               <Reorder.Item
                 key={page.id}
                 value={page}
-                className="bg-white rounded-2xl shadow-sm border border-gray-100 flex gap-3 p-3 touch-none"
+                className="relative w-full aspect-[3/4] flex-shrink-0 touch-none cursor-grab active:cursor-grabbing"
               >
-                <div className="relative w-24 h-32 flex-shrink-0">
-                  <button
-                    onClick={() => setPreviewPage(page.preview)}
-                    className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200 group relative"
-                  >
-                    <img src={page.preview} className="w-full h-full object-cover" alt={`Page ${index + 1}`} />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                      <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
-                    </div>
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deletePage(index); }}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors z-10"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-
-                <div className="flex-1 flex flex-col justify-center items-end py-1 cursor-grab active:cursor-grabbing">
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <div className="text-right">
-                      <p className="text-xs font-black text-blue-600 uppercase tracking-wider">Page {index + 1}</p>
-                      <p className="text-[10px] mt-0.5">Drag to reorder</p>
-                    </div>
-                    <GripVertical size={20} className="text-gray-300" />
+                <button
+                  onClick={() => setPreviewPage(page.preview)}
+                  className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200 group relative"
+                >
+                  <img src={page.preview} className="w-full h-full object-cover" alt={`Page ${index + 1}`} />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                    <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
                   </div>
-                </div>
+                  <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
+                    {index + 1}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deletePage(index); }}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md hover:bg-red-600 transition-colors z-10"
+                >
+                  <X size={14} />
+                </button>
               </Reorder.Item>
             ))}
           </Reorder.Group>
