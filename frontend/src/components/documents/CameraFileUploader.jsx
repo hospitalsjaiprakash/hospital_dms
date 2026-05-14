@@ -44,6 +44,15 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [watchId, setWatchId] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  // True when viewport is mobile/tablet (< 1024px = below lg breakpoint)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   const streamRef = useRef(null);
 
   const formatBytes = (b) => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -504,26 +513,28 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       )}
 
       {/* Compact Action Area: Camera vs Gallery vs Scanner */}
-      <div className="grid grid-cols-3 sm:grid-cols-1 gap-2 mb-3">
-        {/* Option 1: Internal GPS Camera - Mobile Only */}
-        <button
-          type="button"
-          onClick={startCamera}
-          disabled={disabled || compressing}
-          className={clsx(
-            "sm:hidden flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
-            "border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 group",
-            (disabled || compressing) && "opacity-60 cursor-not-allowed"
-          )}
-        >
-          <div className="relative w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-            <Camera className="w-5 h-5 text-blue-600" />
-            <div className="absolute -top-1 -right-1 bg-blue-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
-              GPS
+      <div className={clsx("gap-2 mb-3", isMobile ? "grid grid-cols-3" : "flex")}>
+        {/* Option 1: Internal GPS Camera - Mobile / Tablet only */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={startCamera}
+            disabled={disabled || compressing}
+            className={clsx(
+              "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
+              "border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 group",
+              (disabled || compressing) && "opacity-60 cursor-not-allowed"
+            )}
+          >
+            <div className="relative w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+              <Camera className="w-5 h-5 text-blue-600" />
+              <div className="absolute -top-1 -right-1 bg-blue-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+                GPS
+              </div>
             </div>
-          </div>
-          <p className="text-[10px] font-bold text-gray-800">GPS Camera</p>
-        </button>
+            <p className="text-[10px] font-bold text-gray-800">GPS Camera</p>
+          </button>
+        )}
 
         {/* Option 2: System File Picker - Always visible */}
         <div
@@ -531,6 +542,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           onClick={open}
           className={clsx(
             "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 border-dashed transition-all cursor-pointer",
+            isMobile ? "" : "flex-1",
             isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
             (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
@@ -542,32 +554,36 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <p className="text-[10px] font-bold text-gray-700">Gallery / PDF</p>
         </div>
 
-        {/* Option 3: Document Scanner - Mobile Only */}
-        <button
-          type="button"
-          onClick={() => setScannerOpen(true)}
-          disabled={disabled || compressing}
-          className={clsx(
-            "sm:hidden flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
-            "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
-            (disabled || compressing) && "opacity-60 cursor-not-allowed"
-          )}
-        >
-          <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-            <Scan className="w-5 h-5 text-purple-600" />
-            <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
-              SCAN
+        {/* Option 3: Document Scanner - Mobile / Tablet only */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            disabled={disabled || compressing}
+            className={clsx(
+              "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
+              "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
+              (disabled || compressing) && "opacity-60 cursor-not-allowed"
+            )}
+          >
+            <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+              <Scan className="w-5 h-5 text-purple-600" />
+              <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+                SCAN
+              </div>
             </div>
-          </div>
-          <p className="text-[10px] font-bold text-gray-800">Scanner</p>
-        </button>
+            <p className="text-[10px] font-bold text-gray-800">Scanner</p>
+          </button>
+        )}
       </div>
 
-      <div className="sm:hidden bg-amber-50/50 border border-amber-100/50 rounded-lg p-2.5">
-        <p className="text-[10px] text-amber-700 leading-tight">
-          <span className="font-bold uppercase tracking-tight">Recommendation:</span> Use the <span className="font-bold underline">GPS Camera</span> for automatic branding and verification.
-        </p>
-      </div>
+      {isMobile && (
+        <div className="bg-amber-50/50 border border-amber-100/50 rounded-lg p-2.5">
+          <p className="text-[10px] text-amber-700 leading-tight">
+            <span className="font-bold uppercase tracking-tight">Recommendation:</span> Use the <span className="font-bold underline">GPS Camera</span> for automatic branding and verification.
+          </p>
+        </div>
+      )}
 
 
 
@@ -585,8 +601,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Document Scanner Component */}
-      {scannerOpen && (
+      {/* Document Scanner Component — only available on mobile/tablet */}
+      {scannerOpen && isMobile && (
         <DocumentScanner 
           onClose={() => setScannerOpen(false)} 
           onComplete={(pdfFile) => processAndSetFile(pdfFile)} 
