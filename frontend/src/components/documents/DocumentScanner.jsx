@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Camera, X, Check, ArrowRight, RotateCw,
-  Trash2, ChevronLeft, ChevronRight, FileText, Scan, ZoomIn
+  Trash2, ChevronLeft, ChevronRight, FileText, Scan, ZoomIn, GripVertical
 } from 'lucide-react';
 import { Button } from '../common';
 import toast from 'react-hot-toast';
+import { Reorder } from 'framer-motion';
 
 // ── OpenCV Helper Functions ──────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [previewPage, setPreviewPage] = useState(null);
   const [videoReady, setVideoReady] = useState(false);
   const [cvReady, setCvReady] = useState(false);
+  const [magnifier, setMagnifier] = useState(null);
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -241,8 +243,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
     const pt = getRelativePoint(e.clientX, e.clientY);
     if (!pt) return;
     setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
+    setMagnifier({ x: e.clientX, y: e.clientY, ptX: pt.x, ptY: pt.y });
   }, [getRelativePoint]);
-  const onMouseUp = () => { draggingIdxRef.current = null; };
+  const onMouseUp = () => { draggingIdxRef.current = null; setMagnifier(null); };
 
   const onTouchStart = (e, idx) => { e.preventDefault(); draggingIdxRef.current = idx; };
   const onTouchMove = useCallback((e) => {
@@ -251,8 +254,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
     const pt = getRelativePoint(t.clientX, t.clientY);
     if (!pt) return;
     setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
+    setMagnifier({ x: t.clientX, y: t.clientY, ptX: pt.x, ptY: pt.y });
   }, [getRelativePoint]);
-  const onTouchEnd = () => { draggingIdxRef.current = null; };
+  const onTouchEnd = () => { draggingIdxRef.current = null; setMagnifier(null); };
 
   // ── Crop complete ───────────────────────────────────────────────────────────
   const handleCropComplete = async () => {
@@ -381,20 +385,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         )}
 
-        <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 60px rgba(0,0,0,0.45)' }}>
-          <div className="absolute inset-[60px] border border-white/30 rounded-lg">
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-sm" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-sm" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-sm" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-sm" />
-          </div>
-        </div>
 
-        <div className="absolute top-4 left-0 right-0 flex justify-center">
-          <span className="bg-black/50 backdrop-blur-sm px-4 py-1.5 rounded-full text-white text-xs font-semibold tracking-wider">
-            📄 Position document in frame
-          </span>
-        </div>
       </div>
 
       <div className="h-32 bg-black flex items-center justify-around px-6 border-t border-white/10">
@@ -431,9 +422,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
               </span>
             </>
           ) : (
-            <div className="w-full h-full rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center">
-              <FileText className="text-white/30 w-5 h-5" />
-            </div>
+            <div className="w-full h-full"></div>
           )}
         </button>
       </div>
@@ -452,6 +441,30 @@ export default function DocumentScanner({ onComplete, onClose }) {
           <span className="text-white font-bold text-sm">✂️ Adjust Crop</span>
           <span className="text-xs text-gray-400">Drag corners to select document area</span>
         </div>
+
+        {magnifier && cropContainerRef.current && (
+          <div
+            className="fixed pointer-events-none w-24 h-24 rounded-full border-4 border-white shadow-2xl z-50 overflow-hidden bg-gray-900"
+            style={{ left: magnifier.x - 48, top: magnifier.y - 120 }}
+          >
+            <img
+              src={currentOriginal.url}
+              className="absolute max-w-none"
+              style={{
+                width: cropContainerRef.current.offsetWidth * 2,
+                height: cropContainerRef.current.offsetHeight * 2,
+                left: -((magnifier.ptX / currentOriginal.width) * cropContainerRef.current.offsetWidth * 2) + 48,
+                top: -((magnifier.ptY / currentOriginal.height) * cropContainerRef.current.offsetHeight * 2) + 48,
+              }}
+              alt="magnifier"
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-1 h-1 bg-blue-500 rounded-full" />
+              <div className="w-full h-[1px] bg-blue-500/50 absolute" />
+              <div className="h-full w-[1px] bg-blue-500/50 absolute" />
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-4">
           <div
@@ -573,55 +586,43 @@ export default function DocumentScanner({ onComplete, onClose }) {
             <p className="text-sm font-medium">No pages scanned yet</p>
           </div>
         ) : (
-          pages.map((page, index) => (
-            <div
-              key={page.id}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex gap-3 p-3"
-            >
-              <button
-                onClick={() => setPreviewPage(page.preview)}
-                className="relative w-24 h-32 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 border border-gray-200 group"
+          <Reorder.Group axis="y" values={pages} onReorder={setPages} className="space-y-3 m-0 p-0 list-none">
+            {pages.map((page, index) => (
+              <Reorder.Item
+                key={page.id}
+                value={page}
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 flex gap-3 p-3 touch-none"
               >
-                <img src={page.preview} className="w-full h-full object-cover" alt={`Page ${index + 1}`} />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
+                <div className="relative w-24 h-32 flex-shrink-0">
+                  <button
+                    onClick={() => setPreviewPage(page.preview)}
+                    className="w-full h-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200 group relative"
+                  >
+                    <img src={page.preview} className="w-full h-full object-cover" alt={`Page ${index + 1}`} />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                      <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deletePage(index); }}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors z-10"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-              </button>
 
-              <div className="flex-1 flex flex-col justify-between py-1">
-                <div>
-                  <p className="text-xs font-black text-blue-600 uppercase tracking-wider">Page {index + 1}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Tap thumbnail to preview</p>
+                <div className="flex-1 flex flex-col justify-center items-end py-1 cursor-grab active:cursor-grabbing">
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <div className="text-right">
+                      <p className="text-xs font-black text-blue-600 uppercase tracking-wider">Page {index + 1}</p>
+                      <p className="text-[10px] mt-0.5">Drag to reorder</p>
+                    </div>
+                    <GripVertical size={20} className="text-gray-300" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => movePage(index, -1)}
-                    disabled={index === 0}
-                    className="p-2 bg-gray-50 rounded-lg text-gray-500 disabled:opacity-30 hover:bg-gray-100 transition-colors"
-                    title="Move up"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    onClick={() => movePage(index, 1)}
-                    disabled={index === pages.length - 1}
-                    className="p-2 bg-gray-50 rounded-lg text-gray-500 disabled:opacity-30 hover:bg-gray-100 transition-colors"
-                    title="Move down"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                  <div className="flex-1" />
-                  <button
-                    onClick={() => deletePage(index)}
-                    className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Delete page"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
+              </Reorder.Item>
+            ))}
+          </Reorder.Group>
         )}
 
         <button
