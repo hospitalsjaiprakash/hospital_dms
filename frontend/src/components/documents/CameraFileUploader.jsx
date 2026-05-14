@@ -188,7 +188,24 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       // Draw Mini Map if available
       if (mapImg) {
         const mapSize = cardHeight - (cardPadding * 2);
-        ctx.drawImage(mapImg, cardPadding, canvas.height - cardHeight + cardPadding, mapSize, mapSize);
+        const mapY = canvas.height - cardHeight + cardPadding;
+        
+        ctx.drawImage(mapImg, cardPadding, mapY, mapSize, mapSize);
+        
+        // Map border
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 2 * scale;
+        ctx.strokeRect(cardPadding, mapY, mapSize, mapSize);
+
+        // Map center crosshair dot
+        ctx.fillStyle = '#3b82f6'; // Blue dot
+        ctx.beginPath();
+        ctx.arc(cardPadding + mapSize/2, mapY + mapSize/2, 5 * scale, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2 * scale;
+        ctx.stroke();
+
         textX = cardPadding + mapSize + (cardPadding);
       }
 
@@ -332,43 +349,81 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             </div>
           )}
 
+          {/* Viewfinder Overlay (Rule of Thirds + Crosshair) */}
+          {videoReady && (
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20">
+                <div className="border-r border-b border-white" />
+                <div className="border-r border-b border-white" />
+                <div className="border-b border-white" />
+                <div className="border-r border-b border-white" />
+                <div className="border-r border-b border-white" />
+                <div className="border-b border-white" />
+                <div className="border-r border-white" />
+                <div className="border-r border-white" />
+                <div className="" />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-16 h-16 flex items-center justify-center">
+                  <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-ping opacity-80" />
+                  <div className="absolute w-4 h-16 border-l border-r border-yellow-400/30" />
+                  <div className="absolute w-16 h-4 border-t border-b border-yellow-400/30" />
+                  <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-yellow-400 opacity-60" />
+                  <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-yellow-400 opacity-60" />
+                  <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-yellow-400 opacity-60" />
+                  <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-yellow-400 opacity-60" />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* GPS Live Tagging Overlay */}
           {videoReady && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/60 backdrop-blur-sm text-white flex gap-4 items-end border-t border-white/10">
-              {/* Live Map Placeholder */}
-              <div className="w-20 h-20 bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 border border-white/20 relative">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent pt-16 text-white flex gap-3 items-end">
+              {/* Live Map Box */}
+              <div className="w-[84px] h-[84px] bg-gray-900 rounded border border-white/40 flex-shrink-0 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.8)]">
                 {gpsData ? (
                   <img 
-                    src={`https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=14&l=map&size=100,100`}
-                    className="w-full h-full object-cover"
+                    src={`https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=15&l=map&size=100,100`}
+                    className="w-full h-full object-cover opacity-90 contrast-125 saturate-50"
                     alt="map"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center"><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /></div>
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900/80">
+                    <Scan className="w-5 h-5 text-blue-500 animate-pulse mb-1" />
+                    <span className="text-[8px] font-bold text-gray-400 tracking-wider">LOCATING</span>
+                  </div>
                 )}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,1)] animate-pulse" />
-                </div>
+                {gpsData && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_#3b82f6] border border-white animate-pulse" />
+                  </div>
+                )}
+                {/* Crosshair corners */}
+                <div className="absolute top-0 left-0 w-2 h-2 border-t-[1.5px] border-l-[1.5px] border-blue-400" />
+                <div className="absolute bottom-0 right-0 w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-blue-400" />
               </div>
 
-              <div className="flex-1 min-w-0 space-y-0.5 pb-1">
-                <div className="flex items-center gap-2">
-                   <span className="bg-blue-600 text-[8px] px-1 rounded font-bold">GEO-TAG</span>
-                   <span className="text-[9px] font-bold text-amber-400">JPHRC HOSPITAL</span>
+              <div className="flex-1 min-w-0 flex flex-col justify-end">
+                <div className="flex items-center gap-1.5 mb-1">
+                   <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded-sm font-black tracking-wider shadow-sm">GEO-TAG</span>
+                   <span className="text-[9px] font-black tracking-widest text-amber-400 uppercase drop-shadow-md">JPHRC Hospital</span>
                 </div>
-                <p className="text-sm font-bold truncate">
+                <div className="font-black text-[15px] truncate drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-white">
                   {address ? address.split(',').slice(0, 2).join(', ') : 'Determining location...'} 🇮🇳
-                </p>
-                <p className="text-[10px] text-white/70 line-clamp-1 leading-tight">
+                </div>
+                <div className="text-[10px] text-white/80 line-clamp-1 leading-snug drop-shadow-md font-medium">
                   {address ? address.split(',').slice(2).join(', ').trim() : 'Fetching address details...'}
-                </p>
-                <div className="pt-0.5 flex flex-col text-[10px] text-white/90 font-medium">
-                  <span className="text-blue-300 font-bold">
-                    {gpsData 
-                      ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
-                      : 'GPS Signal: Searching...'}
-                  </span>
-                  <span className="text-[9px] opacity-80">{liveTime.toLocaleDateString('en-GB', { weekday: 'long' })}, {liveTime.toLocaleString()}</span>
+                </div>
+                
+                <div className="flex flex-col mt-1.5 bg-black/50 p-1.5 px-2 rounded border border-white/10 backdrop-blur-md w-fit">
+                  <div className="flex gap-3 text-[10px] font-mono font-bold text-blue-300 tracking-tight">
+                    <span>LAT {gpsData ? gpsData.latitude.toFixed(6) : '--.------'}°</span>
+                    <span>LNG {gpsData ? gpsData.longitude.toFixed(6) : '--.------'}°</span>
+                  </div>
+                  <div className="text-[9px] font-bold text-gray-300 mt-0.5 uppercase tracking-wider">
+                    {liveTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • {liveTime.toLocaleTimeString('en-US', { hour12: false })}
+                  </div>
                 </div>
               </div>
             </div>
