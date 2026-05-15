@@ -25,7 +25,7 @@ const ACTION_META = {
   user_update: { icon: Edit2, color: 'amber', label: 'User Updated' },
 };
 
-const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue' };
+const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue', nursing: 'green' };
 
 export default function AuditLogsPage() {
   const location = useLocation();

@@ -75,7 +75,7 @@ router.post('/users', authenticate, authorize('admin', 'hod'), validate(schemas.
 router.patch('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
 
 // ── Audit Logs (Admin & HOD) ────────────────────────────────────────────────
-router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc'), auditCtrl.getLogs);
+router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc', 'nursing'), auditCtrl.getLogs);
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 router.get('/health', async (req, res) => {

@@ -39,7 +39,8 @@ const getUsers = async (req, res) => {
   const [countRes, usersRes] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM users ${where}`, params),
     db.query(
-      `SELECT id, name, role, employee_id, is_active, last_login, created_at, plain_password
+      `SELECT id, name, role, employee_id, is_active, last_login, created_at, 
+              ${req.user.role === 'admin' ? 'plain_password' : 'NULL as plain_password'}
        FROM users ${where}
        ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, limit, offset]

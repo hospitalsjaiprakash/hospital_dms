@@ -81,8 +81,9 @@ const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit,
     // Legacy: keep for backward compat
     conditions.push(`al.entity_type IN ('patient', 'document')`);
   } else if (requesterRole === 'hod') {
-    // HOD sees: activity from PCC and Nursing, AND HOD activity (excluding auth actions)
-    conditions.push(`(al.user_role IN ('pcc', 'nursing') OR (al.user_role = 'hod' AND al.action NOT IN ('login', 'logout', 'login_failed')))`);
+    // HOD sees: activity from PCC and Nursing, AND their OWN activity (any), AND other HOD activity (excluding auth actions)
+    conditions.push(`(al.user_role IN ('pcc', 'nursing') OR al.user_id = $${idx++} OR (al.user_role = 'hod' AND al.action NOT IN ('login', 'logout', 'login_failed')))`);
+    params.push(requesterId);
   } else if (requesterRole === 'pcc' || requesterRole === 'nursing') {
     // PCC/Nursing sees ONLY their own activity
     conditions.push(`al.user_id = $${idx++}`);
