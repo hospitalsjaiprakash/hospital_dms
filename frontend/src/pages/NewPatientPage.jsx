@@ -7,17 +7,9 @@ import { Button, Input, Card, Select } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
 import { ArrowLeft, User, Hash, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { DOC_TYPE_LABELS } from '../components/documents/constants';
 
-const DOC_TYPES = [
-  { value: 'id_proof', label: 'ID Proof' },
-  { value: 'ayushman_card', label: 'Ayushman Card' },
-  { value: 'admission_photo', label: 'Admission Photo' },
-  { value: 'prescription', label: 'Prescription' },
-  { value: 'lab_reports', label: 'Lab Reports' },
-  { value: 'scans', label: 'Scans / Radiology' },
-  { value: 'discharge_summary', label: 'Discharge Summary' },
-  { value: 'other', label: 'Other' },
-];
+const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
