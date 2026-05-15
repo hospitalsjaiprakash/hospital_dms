@@ -142,6 +142,7 @@ export default function NewPatientPage() {
                       onChange={val => field.onChange(val.value)}
                       placeholder="Search or select type..."
                       className="text-sm"
+                      menuPortalTarget={document.body}
                       styles={{
                         control: (base, state) => ({
                           ...base,
@@ -151,7 +152,7 @@ export default function NewPatientPage() {
                           boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
                           '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
                         }),
-                        menu: (base) => ({ ...base, zIndex: 50 })
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 })
                       }}
                     />
                   )}

@@ -115,6 +115,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
                       onChange={val => field.onChange(val.value)}
                       placeholder="Search or select type..."
                       className="text-sm"
+                      menuPortalTarget={document.body}
                       styles={{
                         control: (base, state) => ({
                           ...base,
@@ -123,7 +124,8 @@ export default function DocumentUpload({ patientId, open, onClose }) {
                           minHeight: '42px',
                           boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
                           '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
-                        })
+                        }),
+                        menuPortal: (base) => ({ ...base, zIndex: 9999 })
                       }}
                     />
                   )}

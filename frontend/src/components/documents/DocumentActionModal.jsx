@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { documentApi } from '../../services/api';
-import { Modal, Button, Select, Spinner } from '../common';
+import ReactSelect from 'react-select';
+import { Modal, Button, Spinner } from '../common';
 import { AlertCircle, Download, Edit2, Eye, File, Trash2, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS } from './constants';
@@ -25,7 +26,7 @@ export default function DocumentActionModal({ docId, open, onClose }) {
     { enabled: !!docId && open, retry: false }
   );
 
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm();
   
   React.useEffect(() => {
     if (data?.data) {
@@ -188,14 +189,40 @@ export default function DocumentActionModal({ docId, open, onClose }) {
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Replace Document File (Optional)</label>
                   <CameraFileUploader file={file} onChange={setFile} disabled={updating} />
                 </div>
-                <Select
-                  label="Type" required
-                  {...register('doc_type', { required: 'Please select document type' })}
-                >
-                  {Object.entries(DOC_TYPE_LABELS).map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
-                  ))}
-                </Select>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                  <Controller
+                    name="doc_type"
+                    control={control}
+                    rules={{ required: 'Please select document type' }}
+                    render={({ field }) => {
+                      const options = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+                      return (
+                        <ReactSelect
+                          {...field}
+                          options={options}
+                          value={options.find(c => c.value === field.value) || null}
+                          onChange={val => field.onChange(val.value)}
+                          placeholder="Search or select type..."
+                          className="text-sm"
+                          menuPortalTarget={document.body}
+                          styles={{
+                            control: (base, state) => ({
+                              ...base,
+                              borderColor: errors?.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                              borderRadius: '0.5rem',
+                              minHeight: '42px',
+                              boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                              '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                            }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                          }}
+                        />
+                      );
+                    }}
+                  />
+                  {errors?.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                </div>
 
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
