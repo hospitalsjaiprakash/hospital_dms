@@ -183,7 +183,7 @@ export default function AuditLogsPage() {
                         </span>
                       ) : log.entity_type === 'user' && log.action === 'user_update' && log.new_values && typeof log.new_values.is_active !== 'undefined' ? (
                         <span className="text-xs font-medium text-gray-700 truncate max-w-full" title={`User ${log.new_values.is_active ? 'approved' : 'deactivated'}`}>
-                          System Admin {log.new_values.is_active ? 'approved' : 'deactivated'} user {log.target_user_name || 'unknown'} ({log.target_user_emp_id || 'ID unknown'})
+                          {log.user_name || 'System Admin'} {log.new_values.is_active ? 'approved' : 'deactivated'} user {log.target_user_name || 'unknown'} ({log.target_user_emp_id || 'ID unknown'})
                         </span>
                       ) : log.new_values ? (
                         <span className="text-xs text-gray-500 truncate max-w-full">
