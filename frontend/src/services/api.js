@@ -52,9 +52,9 @@ api.interceptors.response.use(
       window.location.href = '/login';
     }
     
-    // Check for detailed validation errors
-    if (error.response?.data?.details && Array.isArray(error.response.data.details)) {
-      const details = error.response.data.details.map(d => d.message).join(', ');
+    // Check for detailed validation errors (backend uses 'errors' key)
+    if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+      const details = error.response.data.errors.map(d => d.message).join(', ');
       return Promise.reject(new Error(`${error.response.data.message}: ${details}`));
     }
 

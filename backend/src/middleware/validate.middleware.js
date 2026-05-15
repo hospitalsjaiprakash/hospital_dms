@@ -34,7 +34,7 @@ const schemas = {
       'any.required': 'UHID is required'
     }),
     name: Joi.string().min(2).max(200).required(),
-    admission_date: Joi.date().iso().required(),
+    admission_date: Joi.date().required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
