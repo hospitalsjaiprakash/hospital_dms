@@ -135,7 +135,7 @@ export default function AuditLogsPage() {
                     key={log.id}
                     onClick={() => isDocumentRow ? setSelectedDocId(log.entity_id) : null}
                     className={clsx(
-                      "flex sm:grid sm:grid-cols-12 sm:gap-3 items-center px-5 py-3.5 transition-colors",
+                      "flex flex-wrap sm:grid sm:grid-cols-12 sm:gap-3 items-center px-5 py-3.5 transition-colors",
                       isDocumentRow ? "cursor-pointer hover:bg-blue-50" : "hover:bg-gray-50"
                     )}
                   >
@@ -157,17 +157,17 @@ export default function AuditLogsPage() {
                       )}
                     </div>
 
-                    {/* Entity */}
+                    {/* Entity (Hidden on Mobile) */}
                     <div className="hidden sm:flex sm:col-span-2 items-center">
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md font-mono capitalize">
                         {log.entity_type}
                       </span>
                     </div>
 
-                    {/* Details */}
-                    <div className="hidden sm:flex sm:col-span-3 items-center">
+                    {/* Details (Visible on mobile, stacking below user info) */}
+                    <div className="flex sm:col-span-3 items-center mt-2 sm:mt-0 w-full sm:w-auto overflow-hidden">
                       {isDocumentRow && log.document_name ? (
-                        <div className="flex flex-col min-w-0">
+                        <div className="flex flex-col min-w-0 w-full">
                           <span className="text-xs font-semibold text-gray-800 truncate" title={log.document_name}>
                             {['blob', 'image'].includes(log.document_name) ? 'Document' : log.document_name} <span className="text-gray-400 font-normal">({log.document_type})</span>
                           </span>

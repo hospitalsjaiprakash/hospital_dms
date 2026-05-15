@@ -61,12 +61,12 @@ const schemas = {
 
   uploadDocument: Joi.object({
     patient_id: Joi.string().uuid().required(),
-    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'other').required(),
+    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'other').required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
   updateDocument: Joi.object({
-    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'other').optional(),
+    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'other').optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
