@@ -103,7 +103,7 @@ const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit,
        LEFT JOIN users u ON u.id = al.user_id
        LEFT JOIN users target_u ON al.entity_type = 'user' AND al.entity_id::text = target_u.id::text
        LEFT JOIN documents d ON al.entity_type = 'document' AND al.entity_id::text = d.id::text
-       LEFT JOIN patients p ON d.patient_id = p.id
+       LEFT JOIN patients p ON (al.entity_type = 'document' AND d.patient_id = p.id) OR (al.entity_type = 'patient' AND al.entity_id::text = p.id::text)
        ${where}
        ORDER BY al.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,

@@ -185,6 +185,10 @@ export default function AuditLogsPage() {
                         <span className="text-xs font-medium text-gray-700 truncate max-w-full" title={`User ${log.new_values.is_active ? 'approved' : 'deactivated'}`}>
                           {log.user_name || 'System Admin'} {log.new_values.is_active ? 'approved' : 'deactivated'} user {log.target_user_name || 'unknown'} ({log.target_user_emp_id || 'ID unknown'})
                         </span>
+                      ) : log.entity_type === 'patient' && (log.action === 'patient_create' || log.action === 'patient_update') ? (
+                        <span className="text-xs font-medium text-gray-700 truncate max-w-full" title="Patient created/updated">
+                          {log.action === 'patient_create' ? 'Added new patient' : 'Updated patient'} {log.patient_name || log.new_values?.name || 'unknown'} ({log.uhid || log.new_values?.uhid || 'ID unknown'})
+                        </span>
                       ) : log.new_values ? (
                         <span className="text-xs text-gray-500 truncate max-w-full">
                           {typeof log.new_values === 'object'

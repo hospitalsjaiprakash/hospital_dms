@@ -105,10 +105,10 @@ export default function NewPatientPage() {
             />
 
             <Input
-              label="Admission Date" type="date" required icon={Calendar}
-              max={new Date().toISOString().split('T')[0]}
+              label="Admission Date & Time" type="datetime-local" required icon={Calendar}
+              max={new Date().toISOString().slice(0, 16)}
               error={errors.admission_date?.message}
-              {...register('admission_date', { required: 'Admission date is required' })}
+              {...register('admission_date', { required: 'Admission date and time is required' })}
             />
           </div>
 

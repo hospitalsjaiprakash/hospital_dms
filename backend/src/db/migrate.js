@@ -277,6 +277,14 @@ const migrations = [
       ALTER TABLE staff_master DROP CONSTRAINT IF EXISTS staff_master_role_check;
       ALTER TABLE staff_master ADD CONSTRAINT staff_master_role_check CHECK (role IN ('pcc', 'hod', 'admin', 'nursing'));
     `
+  },
+  {
+    name: '017_change_admission_date_to_timestamp',
+    sql: `
+      ALTER TABLE patients
+        ALTER COLUMN admission_date TYPE TIMESTAMPTZ
+        USING admission_date::TIMESTAMPTZ;
+    `
   }
 ];
 
