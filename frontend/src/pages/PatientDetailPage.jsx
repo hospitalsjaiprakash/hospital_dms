@@ -519,9 +519,6 @@ export default function PatientDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
             <Edit2 size={13} /> Edit
           </Button>
-          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)}>
-            <Trash2 size={13} /> Delete Patient
-          </Button>
           <Button size="sm" onClick={handleDownloadSelected} loading={isDownloading} variant={selectedDocs.size > 0 ? "primary" : "secondary"}>
             <Download size={13} /> {selectedDocs.size === 0 ? 'Download All' : `Download ${selectedDocs.size} File${selectedDocs.size > 1 ? 's' : ''}`}
           </Button>
@@ -534,9 +531,6 @@ export default function PatientDetailPage() {
         <div className="sm:hidden flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
             <Edit2 size={13} /> Edit
-          </Button>
-          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="flex-1">
-            <Trash2 size={13} /> Delete
           </Button>
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)} className="flex-1">
@@ -602,8 +596,8 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-50">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-50">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs text-gray-500 font-medium">Hospital:</span>
             <Badge variant={STATUS_COLORS[patient.hospital_status]}>
               {patient.hospital_status === 'active' ? '🟢' : '🔵'} {patient.hospital_status}
@@ -613,10 +607,13 @@ export default function PatientDetailPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500 font-medium">Settlement:</span>
               <Badge variant={STATUS_COLORS[patient.settlement_status]}>
-                {patient.settlement_status === 'pending' ? '⏳' : '✅'} {patient.settlement_status}
+                {patient.settlement_status === 'completed' ? '💰' : '⏳'} {patient.settlement_status}
               </Badge>
             </div>
           )}
+          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="w-full sm:w-auto">
+            <Trash2 size={13} /> Delete Patient Profile
+          </Button>
         </div>
       </Card>
 
