@@ -87,7 +87,7 @@ function AddUserModal({ open, onClose, currentUser }) {
   );
 }
 
-function UserDetailsModal({ user, open, onClose }) {
+function UserDetailsModal({ user, open, onClose, currentUser }) {
   const [page, setPage] = useState(1);
   const { data, isLoading } = useQuery(
     ['user_audit_logs', user?.id, page],
@@ -118,14 +118,16 @@ function UserDetailsModal({ user, open, onClose }) {
               <p className="font-medium text-gray-900">{user.employee_id}</p>
             </div>
           )}
-          <div className="col-span-2">
-            <p className="text-xs text-gray-500 uppercase font-semibold">Password</p>
-            {user.plain_password ? (
-              <code className="text-sm bg-white border border-gray-200 px-2 py-1 rounded mt-1 inline-block text-gray-700">{user.plain_password}</code>
-            ) : (
-              <p className="text-sm text-gray-400 mt-1 italic">Hidden (Not captured at signup)</p>
-            )}
-          </div>
+          {currentUser?.role === 'admin' && (
+            <div className="col-span-2">
+              <p className="text-xs text-gray-500 uppercase font-semibold">Password</p>
+              {user.plain_password ? (
+                <code className="text-sm bg-white border border-gray-200 px-2 py-1 rounded mt-1 inline-block text-gray-700">{user.plain_password}</code>
+              ) : (
+                <p className="text-sm text-gray-400 mt-1 italic">Hidden (Not captured at signup)</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div>
@@ -215,9 +217,11 @@ export default function UsersPage() {
           <p className="text-gray-400 text-sm mt-0.5">{pagination?.total ?? 0} registered users</p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => setAddUserOpen(true)}>
-            <UserPlus size={14} /> Add User
-          </Button>
+          {currentUser?.role === 'admin' && (
+            <Button size="sm" onClick={() => setAddUserOpen(true)}>
+              <UserPlus size={14} /> Add User
+            </Button>
+          )}
         </div>
       </div>
 
@@ -252,7 +256,7 @@ export default function UsersPage() {
             className="rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
             <option value="">All Roles</option>
             <option value="pcc">PCC</option>
-            <option value="hod">HOD</option>
+            {currentUser?.role === 'admin' && <option value="hod">HOD</option>}
             <option value="nursing">Nursing</option>
           </select>
         </div>
@@ -315,7 +319,7 @@ export default function UsersPage() {
       </Card>
 
       <AddUserModal open={addUserOpen} onClose={() => setAddUserOpen(false)} currentUser={currentUser} />
-      <UserDetailsModal user={selectedUser} open={!!selectedUser} onClose={() => setSelectedUser(null)} />
+      <UserDetailsModal user={selectedUser} open={!!selectedUser} onClose={() => setSelectedUser(null)} currentUser={currentUser} />
 
       <Modal
         open={!!confirmTarget}

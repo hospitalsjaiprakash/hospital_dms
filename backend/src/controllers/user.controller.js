@@ -11,6 +11,16 @@ const getUsers = async (req, res) => {
   const params = ['admin'];
   let idx = 2;
 
+  if (req.user && req.user.id) {
+    conditions.push(`id != $${idx++}`);
+    params.push(req.user.id);
+  }
+
+  if (req.user && req.user.role === 'hod') {
+    conditions.push(`role != $${idx++}`);
+    params.push('hod');
+  }
+
   if (search) { conditions.push(`(name ILIKE $${idx} OR employee_id ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
   if (role) { conditions.push(`role = $${idx++}`); params.push(role); }
   
@@ -40,6 +50,10 @@ const getUsers = async (req, res) => {
 };
 
 const createUser = async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Only administrators can create new users', 403);
+  }
+
   const { name, employee_id, role, password } = req.body;
 
   const existing = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
@@ -67,9 +81,9 @@ const toggleUserStatus = async (req, res) => {
   const userRes = await db.query('SELECT * FROM users WHERE id = $1', [id]);
   if (!userRes.rows.length) return sendError(res, 'User not found', 404);
 
-  // Security: HODs can only manage PCCs, not other HODs
-  if (req.user.role === 'hod' && userRes.rows[0].role === 'hod') {
-    return sendError(res, 'HODs cannot manage other HOD accounts', 403);
+  // Security: HODs can only manage PCCs and Nursing
+  if (req.user.role === 'hod' && ['admin', 'hod'].includes(userRes.rows[0].role)) {
+    return sendError(res, 'HODs can only manage Nursing and PCC accounts', 403);
   }
 
   const newStatus = !userRes.rows[0].is_active;
