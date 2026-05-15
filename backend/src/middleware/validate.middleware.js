@@ -28,13 +28,13 @@ const schemas = {
   }),
 
   createPatient: Joi.object({
-    uhid: Joi.string().length(11).uppercase().required().messages({
+    uhid: Joi.string().length(11).pattern(/^[A-Z0-9]{11}$/).uppercase().required().messages({
       'string.length': 'UHID must be exactly 11 characters',
       'string.pattern.base': 'UHID must contain only letters and numbers',
       'any.required': 'UHID is required'
     }),
     name: Joi.string().min(2).max(200).required(),
-    admission_date: Joi.date().iso().max('now').required(),
+    admission_date: Joi.date().iso().required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
