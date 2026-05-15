@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQueryClient } from 'react-query';
+import ReactSelect from 'react-select';
 import { patientApi, documentApi } from '../services/api';
 import { Button, Input, Card, Select } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
@@ -14,7 +15,7 @@ const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ val
 export default function NewPatientPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, control, formState: { errors } } = useForm();
 
   const [docFiles, setDocFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -127,15 +128,35 @@ export default function NewPatientPage() {
             />
 
             {docFiles.length > 0 && (
-              <div className="mt-3">
-                <Select
-                  label="Type" required
-                  error={errors.doc_type?.message}
-                  {...register('doc_type', { required: docFiles.length > 0 ? 'Please select document type' : false })}
-                >
-                  <option value="">Select type...</option>
-                  {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </Select>
+              <div className="mt-3 space-y-1">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                <Controller
+                  name="doc_type"
+                  control={control}
+                  rules={{ required: docFiles.length > 0 ? 'Please select document type' : false }}
+                  render={({ field }) => (
+                    <ReactSelect
+                      {...field}
+                      options={DOC_TYPES}
+                      value={DOC_TYPES.find(c => c.value === field.value) || null}
+                      onChange={val => field.onChange(val.value)}
+                      placeholder="Search or select type..."
+                      className="text-sm"
+                      styles={{
+                        control: (base, state) => ({
+                          ...base,
+                          borderColor: errors.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                          borderRadius: '0.5rem',
+                          minHeight: '42px',
+                          boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                          '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                        }),
+                        menu: (base) => ({ ...base, zIndex: 50 })
+                      }}
+                    />
+                  )}
+                />
+                {errors.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
               </div>
             )}
           </div>
