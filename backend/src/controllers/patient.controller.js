@@ -1,6 +1,7 @@
 const db = require('../db');
 const { sendSuccess, sendError, sendPaginated, getPaginationParams } = require('../utils/response');
 const { auditLog, ACTIONS } = require('../services/audit.service');
+const { deleteFromS3 } = require('../services/storage.service');
 const ExcelJS = require('exceljs');
 
 const createPatient = async (req, res) => {
@@ -345,4 +346,38 @@ const exportPatientsExcel = async (req, res) => {
   res.end();
 };
 
-module.exports = { createPatient, getPatients, getPatient, updatePatient, bulkUpdatePatients, getPatientStats, getUploadHistory, exportPatientsExcel };
+const deletePatient = async (req, res) => {
+  const { id } = req.params;
+
+  const patientRes = await db.query('SELECT * FROM patients WHERE id = $1', [id]);
+  if (!patientRes.rows.length) return sendError(res, 'Patient not found', 404);
+  const patient = patientRes.rows[0];
+
+  // Fetch all documents to delete from S3
+  const docsRes = await db.query('SELECT s3_key FROM documents WHERE patient_id = $1', [id]);
+  const s3Keys = docsRes.rows.map(d => d.s3_key);
+
+  try {
+    await db.withTransaction(async (client) => {
+      // Delete documents (DB)
+      await client.query('DELETE FROM documents WHERE patient_id = $1', [id]);
+      // Delete patient (DB)
+      await client.query('DELETE FROM patients WHERE id = $1', [id]);
+    });
+
+    // Delete files from S3 asynchronously
+    if (s3Keys.length > 0) {
+      for (const key of s3Keys) {
+        deleteFromS3(key).catch(err => console.error('Failed to delete patient file from S3:', { key, error: err.message }));
+      }
+    }
+
+    await auditLog(ACTIONS.PATIENT_DELETE, 'patient')(req, id, { uhid: patient.uhid, name: patient.name }, null);
+
+    return sendSuccess(res, null, 'Patient and associated documents deleted successfully');
+  } catch (err) {
+    return sendError(res, 'Failed to delete patient', 500);
+  }
+};
+
+module.exports = { createPatient, getPatients, getPatient, updatePatient, bulkUpdatePatients, getPatientStats, getUploadHistory, exportPatientsExcel, deletePatient };

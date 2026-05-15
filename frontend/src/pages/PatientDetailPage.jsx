@@ -312,6 +312,7 @@ export default function PatientDetailPage() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [actionDocId, setActionDocId] = useState(null);
+  const [deletePatientOpen, setDeletePatientOpen] = useState(false);
 
   const { data: patientData, isLoading: patientLoading } = useQuery(
     ['patient', id],
@@ -348,6 +349,19 @@ export default function PatientDetailPage() {
         toast.success(res.message || 'Documents deleted');
         setSelectedDocs(new Map());
         setShowBulkDeleteModal(false);
+      },
+      onError: (err) => toast.error(err.message),
+    }
+  );
+
+  const { mutate: deletePatient, isLoading: deletingPatient } = useMutation(
+    () => patientApi.delete(id),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('patients');
+        queryClient.invalidateQueries('stats');
+        toast.success('Patient deleted successfully');
+        navigate('/patients');
       },
       onError: (err) => toast.error(err.message),
     }
@@ -505,6 +519,9 @@ export default function PatientDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
             <Edit2 size={13} /> Edit
           </Button>
+          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)}>
+            <Trash2 size={13} /> Delete Patient
+          </Button>
           <Button size="sm" onClick={handleDownloadSelected} loading={isDownloading} variant={selectedDocs.size > 0 ? "primary" : "secondary"}>
             <Download size={13} /> {selectedDocs.size === 0 ? 'Download All' : `Download ${selectedDocs.size} File${selectedDocs.size > 1 ? 's' : ''}`}
           </Button>
@@ -517,6 +534,9 @@ export default function PatientDetailPage() {
         <div className="sm:hidden flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
             <Edit2 size={13} /> Edit
+          </Button>
+          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="flex-1">
+            <Trash2 size={13} /> Delete
           </Button>
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)} className="flex-1">
@@ -741,6 +761,26 @@ export default function PatientDetailPage() {
             <Button variant="secondary" onClick={() => setShowBulkDeleteModal(false)} className="flex-1">Cancel</Button>
             <Button variant="danger" loading={bulkDeleting} onClick={() => bulkDeleteDocuments(Array.from(selectedDocs.keys()))} className="flex-1">
               Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={deletePatientOpen} onClose={() => setDeletePatientOpen(false)} title="Delete Patient Record" maxWidth="max-w-sm">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800">Permanent Deletion</p>
+              <p className="text-xs text-red-600 mt-1">
+                You are about to delete <strong>{patient.name}</strong> and all associated documents. This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setDeletePatientOpen(false)} className="flex-1">Cancel</Button>
+            <Button variant="danger" loading={deletingPatient} onClick={() => deletePatient()} className="flex-1">
+              Confirm Delete
             </Button>
           </div>
         </div>

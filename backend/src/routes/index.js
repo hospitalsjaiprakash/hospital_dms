@@ -45,6 +45,7 @@ router.post('/patients', authenticate, validate(schemas.createPatient), patientC
 router.post('/patients/bulk', authenticate, validate(schemas.bulkUpdatePatients), patientCtrl.bulkUpdatePatients);
 router.get('/patients/:id', authenticate, patientCtrl.getPatient);
 router.patch('/patients/:id', authenticate, validate(schemas.updatePatient), patientCtrl.updatePatient);
+router.delete('/patients/:id', authenticate, patientCtrl.deletePatient);
 
 // ── Documents ────────────────────────────────────────────────────────────────
 router.get('/documents', authenticate, documentCtrl.getAllDocuments);

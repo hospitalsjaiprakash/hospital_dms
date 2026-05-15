@@ -17,6 +17,7 @@ const ACTIONS = {
   USER_CREATE: 'user_create',
   USER_UPDATE: 'user_update',
   USER_DEACTIVATE: 'user_deactivate',
+  PATIENT_DELETE: 'patient_delete',
 };
 
 /**
