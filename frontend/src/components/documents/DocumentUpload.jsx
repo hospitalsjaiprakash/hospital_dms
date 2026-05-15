@@ -80,6 +80,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
       queryClient.invalidateQueries(['documents', patientId]);
       queryClient.invalidateQueries(['patient', patientId]);
       queryClient.invalidateQueries('stats');
+      queryClient.invalidateQueries('audit-logs');
       toast.success(`${successCount} document(s) uploaded successfully!`);
     }
     handleClose();

@@ -56,6 +56,7 @@ export default function NewPatientPage() {
 
       queryClient.invalidateQueries('patients');
       queryClient.invalidateQueries('stats');
+      queryClient.invalidateQueries('audit-logs');
       toast.success(docFiles.length > 0 ? `Patient and ${docFiles.length} document(s) saved!` : 'Patient created successfully!');
       navigate(`/patients/${patientId}`);
     } catch (err) {

@@ -77,6 +77,7 @@ function EditPatientModal({ patient, open, onClose }) {
       queryClient.invalidateQueries('patients');
       queryClient.invalidateQueries('stats');
       queryClient.invalidateQueries(['documents', patient.id]);
+      queryClient.invalidateQueries('audit-logs');
       toast.success(docFile ? 'Patient updated and discharge summary uploaded!' : 'Patient updated!');
       onClose();
     } catch (err) {
