@@ -267,6 +267,16 @@ const migrations = [
       ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'specimen';
       ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'dressing';
     `
+  },
+  {
+    name: '016_add_nursing_role',
+    sql: `
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('pcc', 'hod', 'admin', 'nursing'));
+
+      ALTER TABLE staff_master DROP CONSTRAINT IF EXISTS staff_master_role_check;
+      ALTER TABLE staff_master ADD CONSTRAINT staff_master_role_check CHECK (role IN ('pcc', 'hod', 'admin', 'nursing'));
+    `
   }
 ];
 
