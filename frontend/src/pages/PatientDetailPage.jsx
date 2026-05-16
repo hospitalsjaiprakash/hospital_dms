@@ -611,8 +611,8 @@ export default function PatientDetailPage() {
               </Badge>
             </div>
           )}
-          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="w-full sm:w-auto">
-            <Trash2 size={13} /> Delete Patient Profile
+          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="w-fit self-end sm:w-auto sm:self-auto">
+            <Trash2 size={13} /> <span className="sm:hidden">Delete Profile</span><span className="hidden sm:inline">Delete Patient Profile</span>
           </Button>
         </div>
       </Card>
