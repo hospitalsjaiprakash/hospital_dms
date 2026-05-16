@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'hospital-backend',
-      script: './backend/src/index.js',
+      script: './src/index.js',
       cwd: './backend',
       instances: 1,
       autorestart: true,

@@ -285,6 +285,22 @@ const migrations = [
         ALTER COLUMN admission_date TYPE TIMESTAMPTZ
         USING admission_date::TIMESTAMPTZ;
     `
+  },
+  {
+    name: '018_add_ip_number_and_relax_uhid',
+    sql: `
+      -- Remove global unique constraint from uhid to allow re-admissions
+      ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_uhid_key;
+      
+      -- Add ip_number column
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS ip_number VARCHAR(50);
+      
+      -- Add unique constraint on ip_number (each admission must have a unique IP)
+      ALTER TABLE patients ADD CONSTRAINT patients_ip_number_key UNIQUE (ip_number);
+      
+      -- Add index for searching
+      CREATE INDEX IF NOT EXISTS idx_patients_ip_number ON patients(ip_number);
+    `
   }
 ];
 

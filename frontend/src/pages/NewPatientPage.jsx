@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQueryClient } from 'react-query';
 import ReactSelect from 'react-select';
@@ -14,8 +15,18 @@ const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ val
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { register, handleSubmit, control, formState: { errors } } = useForm();
+  const { register, handleSubmit, control, formState: { errors }, setValue } = useForm();
+
+  const isReadmission = !!searchParams.get('uhid');
+
+  useEffect(() => {
+    const uhid = searchParams.get('uhid');
+    const name = searchParams.get('name');
+    if (uhid) setValue('uhid', uhid);
+    if (name) setValue('name', name);
+  }, [searchParams, setValue]);
 
   const [docFiles, setDocFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -63,6 +74,32 @@ export default function NewPatientPage() {
     createPatient(data, { onSuccess: resolve, onError: reject });
   });
 
+  const handleUhidBlur = async (e) => {
+    const val = e.target.value;
+    if (val.length === 11) {
+      try {
+        const res = await patientApi.getAll({ search: val, limit: 1 });
+        if (res.data.items && res.data.items.length > 0) {
+          const lastRecord = res.data.items[0];
+          setValue('name', lastRecord.name);
+          toast((t) => (
+            <div className="flex flex-col gap-1">
+              <p className="font-bold text-sm">Patient Found: {lastRecord.name}</p>
+              <p className="text-xs opacity-90">This patient is already in our records. Registering as a <strong>Re-admission</strong>.</p>
+              <div className="flex justify-end mt-1">
+                <button onClick={() => toast.dismiss(t.id)} className="bg-white text-blue-600 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm">OK</button>
+              </div>
+            </div>
+          ), { 
+            duration: 5000, 
+            style: { background: '#3b82f6', color: '#fff', borderRadius: '12px' },
+            icon: '🏥'
+          });
+        }
+      } catch (err) { /* ignore */ }
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       {/* Header */}
@@ -71,8 +108,8 @@ export default function NewPatientPage() {
           <ArrowLeft size={18} />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-gray-900">New Patient</h1>
-          <p className="text-gray-400 text-sm">Fill in the patient details below</p>
+          <h1 className="text-xl font-bold text-gray-900">{isReadmission ? 'Re-admit Patient' : 'New Patient'}</h1>
+          <p className="text-gray-400 text-sm">{isReadmission ? 'Registering a new admission cycle' : 'Fill in the patient details below'}</p>
         </div>
       </div>
 
@@ -92,14 +129,22 @@ export default function NewPatientPage() {
               error={errors.uhid?.message}
               {...register('uhid', { 
                 required: 'UHID is required', 
-                minLength: { value: 11, message: 'UHID must be exactly 11 characters' },
-                maxLength: { value: 11, message: 'UHID must be exactly 11 characters' },
-                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Please type valid UHID' }
+                minLength: { value: 11, message: 'UHID must be 11 chars' },
+                maxLength: { value: 11, message: 'UHID must be 11 chars' },
+                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID' },
+                onBlur: handleUhidBlur
               })}
             />
 
             <Input
-              label="Admission Date & Time" type="datetime-local" required icon={Calendar}
+              label="IP Number" placeholder="IP2026/001" required icon={Hash}
+              error={errors.ip_number?.message}
+              {...register('ip_number', { required: 'IP Number is required' })}
+            />
+
+            <Input
+              label={isReadmission ? "Re-admission Date & Time" : "Admission Date & Time"} 
+              type="datetime-local" required icon={Calendar}
               max={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               error={errors.admission_date?.message}
               {...register('admission_date', { required: 'Admission date and time is required' })}

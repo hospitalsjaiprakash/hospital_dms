@@ -94,12 +94,12 @@ export default function PatientsPage() {
   const showDischargeCol = activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled';
   const showSettlementCol = activeTab === 'settled';
 
-  // Dynamic grid: 12 cols for all/active, 13 for discharged/pending, 15 for settled
+  // Dynamic grid: 13 cols for all/active, 14 for discharged/pending, 16 for settled
   const gridStyle = showSettlementCol
-    ? 'repeat(15, minmax(0, 1fr))'
+    ? 'repeat(16, minmax(0, 1fr))'
     : showDischargeCol
-      ? 'repeat(13, minmax(0, 1fr))'
-      : 'repeat(12, minmax(0, 1fr))';
+      ? 'repeat(14, minmax(0, 1fr))'
+      : 'repeat(13, minmax(0, 1fr))';
 
   const patientColSpan = showDischargeCol ? 'col-span-3' : 'col-span-4';
   const statusColSpan = 'col-span-2'; // always 2 — enough room for both badges
@@ -243,7 +243,7 @@ export default function PatientsPage() {
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by UHID or name..."
+            placeholder="Search by IP, UHID or name..."
             className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300 transition-all"
           />
         </div>
@@ -285,6 +285,7 @@ export default function PatientsPage() {
                 )}
                 Patient
               </div>
+              <div className="col-span-1">IP No</div>
               <div className="col-span-2">UHID</div>
               <div className="col-span-2">Admitted</div>
               {showDischargeCol && <div className="col-span-2">Discharged</div>}
@@ -332,6 +333,11 @@ export default function PatientsPage() {
                       <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">{patient.name}</p>
                       <p className="text-xs text-gray-400 sm:hidden">{patient.uhid}</p>
                     </div>
+                  </div>
+
+                  {/* IP No */}
+                  <div className="hidden sm:flex sm:col-span-1 items-center">
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{patient.ip_number || '-'}</span>
                   </div>
 
                   {/* UHID */}

@@ -5,19 +5,29 @@ const { deleteFromS3 } = require('../services/storage.service');
 const ExcelJS = require('exceljs');
 
 const createPatient = async (req, res) => {
-  const { uhid, name, admission_date, notes } = req.body;
+  const { uhid, name, admission_date, ip_number, notes } = req.body;
+  if (!ip_number) return sendError(res, 'IP Number is required', 400);
 
-  // Check UHID uniqueness
-  const existing = await db.query('SELECT id FROM patients WHERE uhid = $1', [uhid]);
-  if (existing.rows.length) {
-    return sendError(res, 'UHID already exists', 409);
+  // Check if patient is already active with this UHID
+  const activeAdmission = await db.query(
+    "SELECT id FROM patients WHERE uhid = $1 AND hospital_status = 'active'", 
+    [uhid]
+  );
+  if (activeAdmission.rows.length) {
+    return sendError(res, 'Patient is already admitted (Active status). Please discharge first before re-admitting.', 409);
+  }
+
+  // Check IP Number uniqueness
+  const existingIP = await db.query('SELECT id FROM patients WHERE ip_number = $1', [ip_number]);
+  if (existingIP.rows.length) {
+    return sendError(res, 'IP Number already exists. Every admission must have a unique IP number.', 409);
   }
 
   const result = await db.query(
-    `INSERT INTO patients (uhid, name, admission_date, notes, hospital_status, settlement_status, created_by)
-     VALUES ($1, $2, $3, $4, 'active', 'pending', $5)
+    `INSERT INTO patients (uhid, name, admission_date, ip_number, notes, hospital_status, settlement_status, created_by)
+     VALUES ($1, $2, $3, $4, $5, 'active', 'pending', $6)
      RETURNING *`,
-    [uhid, name, admission_date, notes || null, req.user.id]
+    [uhid, name, admission_date, ip_number, notes || null, req.user.id]
   );
 
   const patient = result.rows[0];
@@ -36,7 +46,7 @@ const getPatients = async (req, res) => {
   let idx = 1;
 
   if (search) {
-    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx})`);
+    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
     params.push(`%${search}%`);
     idx++;
   }
@@ -82,7 +92,23 @@ const getPatient = async (req, res) => {
 
   if (!result.rows.length) return sendError(res, 'Patient not found', 404);
 
-  return sendSuccess(res, result.rows[0]);
+  const patient = result.rows[0];
+
+  // Fetch admission history (other records with same UHID)
+  const history = await db.query(
+    `SELECT p.id, p.ip_number, p.admission_date, p.discharge_date, p.hospital_status, p.settlement_status, p.created_at, p.settlement_date,
+            (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false)::int as doc_count,
+            u.name as staff_name
+     FROM patients p
+     LEFT JOIN users u ON u.id = p.created_by
+     WHERE p.uhid = $1 AND p.id != $2 
+     ORDER BY p.admission_date DESC`,
+    [patient.uhid, id]
+  );
+
+  patient.admission_history = history.rows;
+
+  return sendSuccess(res, patient);
 };
 
 const updatePatient = async (req, res) => {
@@ -281,7 +307,7 @@ const exportPatientsExcel = async (req, res) => {
   let idx = 1;
 
   if (search) {
-    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx})`);
+    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
     params.push(`%${search}%`);
     idx++;
   }
@@ -309,6 +335,7 @@ const exportPatientsExcel = async (req, res) => {
   worksheet.columns = [
     { header: 'Patient Name', key: 'name', width: 25 },
     { header: 'UHID Number', key: 'uhid', width: 20 },
+    { header: 'IP Number', key: 'ip_number', width: 20 },
     { header: 'Admitted Date', key: 'admitted', width: 15 },
     { header: 'Status', key: 'status', width: 15 },
     { header: 'Discharge Date', key: 'discharge', width: 15 },
@@ -330,6 +357,7 @@ const exportPatientsExcel = async (req, res) => {
     worksheet.addRow({
       name: p.name,
       uhid: p.uhid,
+      ip_number: p.ip_number || '-',
       admitted: admittedStr,
       status: p.hospital_status === 'active' ? 'Active' : 'Discharged',
       discharge: p.hospital_status === 'discharged' ? dischargeStr : '-',

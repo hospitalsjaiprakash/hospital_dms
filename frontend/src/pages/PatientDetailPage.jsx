@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { patientApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +42,7 @@ function EditPatientModal({ patient, open, onClose }) {
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
     defaultValues: {
       name: patient.name,
+      ip_number: patient.ip_number,
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status,
       discharge_date: patient.discharge_date ? new Date(patient.discharge_date).toISOString().slice(0, 16) : '',
@@ -92,11 +93,19 @@ function EditPatientModal({ patient, open, onClose }) {
   return (
     <Modal open={open} onClose={onClose} title="Edit Patient">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
-          <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            {...register('name', { required: 'Name required' })} />
-          {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('name', { required: 'Name required' })} />
+            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('ip_number', { required: 'IP required' })} />
+            {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
+          </div>
         </div>
 
         {!isPCC && (
@@ -513,7 +522,11 @@ export default function PatientDetailPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-gray-900 truncate">{patient.name}</h1>
-          <p className="text-gray-400 text-sm">{patient.uhid}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-gray-400 text-sm font-mono">{patient.uhid}</p>
+            <span className="text-gray-300">•</span>
+            <span className="text-blue-600 text-xs font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">IP: {patient.ip_number}</span>
+          </div>
         </div>
         <div className="hidden sm:flex gap-2 flex-wrap">
           {selectedDocs.size > 0 && (
@@ -524,6 +537,15 @@ export default function PatientDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
             <Edit2 size={13} /> Edit
           </Button>
+          {patient.hospital_status === 'discharged' && (
+            <Button 
+              variant="success" 
+              size="sm" 
+              onClick={() => navigate(`/patients/new?uhid=${patient.uhid}&name=${encodeURIComponent(patient.name)}`)}
+            >
+              <Plus size={13} /> Re-admit
+            </Button>
+          )}
           <Button size="sm" onClick={handleDownloadSelected} loading={isDownloading} variant={selectedDocs.size > 0 ? "primary" : "secondary"}>
             <Download size={13} /> {selectedDocs.size === 0 ? 'Download All' : `Download ${selectedDocs.size} File${selectedDocs.size > 1 ? 's' : ''}`}
           </Button>
@@ -621,6 +643,63 @@ export default function PatientDetailPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Admission History */}
+      {patient.admission_history?.length > 0 && (
+        <Card className="!bg-blue-50/30 !border-blue-100/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={16} className="text-blue-600" />
+            <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Admission History</h3>
+            <span className="text-xs text-blue-400 font-medium">({patient.admission_history.length} other visits found)</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {patient.admission_history.map((h) => (
+              <Link 
+                key={h.id} 
+                to={`/patients/${h.id}`}
+                className="bg-white border border-blue-100 rounded-xl p-3 hover:shadow-md hover:border-blue-300 transition-all group"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">IP: {h.ip_number}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={STATUS_COLORS[h.hospital_status]} size="xs">{h.hospital_status}</Badge>
+                    {h.hospital_status === 'discharged' && (
+                      <Badge variant={STATUS_COLORS[h.settlement_status]} size="xs">{h.settlement_status}</Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <Calendar size={12} className="text-gray-400" />
+                    <span className="font-medium">Admitted: {format(new Date(h.admission_date), 'dd MMM yyyy')}</span>
+                  </div>
+                  {h.discharge_date && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <CheckCircle size={12} className="text-purple-400" />
+                      <span className="font-medium text-purple-700">Discharged: {format(new Date(h.discharge_date), 'dd MMM yyyy')}</span>
+                    </div>
+                  )}
+                  {h.settlement_date && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <CheckCircle size={12} className="text-green-500" />
+                      <span className="font-medium text-green-700">PMJAY: {format(new Date(h.settlement_date), 'dd MMM yyyy')}</span>
+                    </div>
+                  )}
+                  <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                      <File size={10} /> {h.doc_count || 0} docs
+                    </div>
+                    <div className="text-[10px] text-gray-400 italic">by {h.staff_name}</div>
+                  </div>
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <span className="text-[10px] text-blue-500 font-bold group-hover:underline">View Records →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-4">

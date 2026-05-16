@@ -26,7 +26,8 @@ async function seed() {
     await db.query(
       `INSERT INTO users (name, employee_id, password_hash, role, department, is_active)
        VALUES ($1, $2, $3, $4, $5, true)
-       ON CONFLICT (employee_id) DO NOTHING`,
+       ON CONFLICT (employee_id) 
+       DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name`,
       [adminName, adminId, hashedPassword, 'admin', 'Administration']
     );
 

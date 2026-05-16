@@ -8,12 +8,11 @@ A production-grade, full-stack web application for managing hospital patient doc
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 18, Tailwind CSS, React Query, React Hook Form |
-| Backend | Node.js, Express.js |
-| Database | PostgreSQL 16 |
-| File Storage | AWS S3 (with AES-256 server-side encryption) |
-| Auth | JWT (8h access tokens) + bcrypt password hashing |
-| Containerization | Docker + Docker Compose |
+| Frontend | React 18, Tailwind CSS, Lucide icons |
+| Backend | Node.js, Express.js, PostgreSQL 16 |
+| Imaging | OpenCV.js (Scanner), HTML5 Canvas (GPS Stamping) |
+| Storage | AWS S3 / Supabase Storage (AES-256) |
+| Auth | JWT + bcrypt password hashing |
 
 ---
 
@@ -98,16 +97,16 @@ docker-compose logs -f backend
 
 ## 👥 Role Permissions
 
-| Feature | PCC | HOD | Admin |
-|---------|-----|-----|-------|
-| Upload documents | ✅ | ✅ | ✅ |
-| View all documents | ✅ | ✅ | ✅ |
-| Edit own uploads | ✅ | ✅ | ✅ |
-| Delete own uploads | ✅ | ✅ | ✅ |
-| Edit/Delete PCC uploads | ❌ | ✅ | ✅ |
-| Patient management (full) | Limited | ✅ | ✅ |
-| User management | ❌ | ❌ | ✅ |
-| View audit logs | ❌ | ✅ | ✅ |
+| Feature | PCC | Nursing | HOD | Admin |
+|---------|-----|---------|-----|-------|
+| Upload documents | ✅ | ✅ | ✅ | ✅ |
+| View all documents | ✅ | ✅ | ✅ | ✅ |
+| Edit own uploads | ✅ | ✅ | ✅ | ✅ |
+| Delete own uploads | ✅ | ✅ | ✅ | ✅ |
+| Edit/Delete Others | ❌ | ❌ | ✅ | ✅ |
+| Patient management | Limited | ✅ | ✅ | ✅ |
+| User management | ❌ | ❌ | ❌ | ✅ |
+| View audit logs | ❌ | ❌ | ✅ | ✅ |
 
 ---
 
