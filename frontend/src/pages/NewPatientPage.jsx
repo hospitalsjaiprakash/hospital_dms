@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQueryClient } from 'react-query';
 import ReactSelect from 'react-select';
 import { patientApi, documentApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { Button, Input, Card, Select } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
 import { ArrowLeft, User, Hash, Calendar } from 'lucide-react';
@@ -17,9 +18,12 @@ export default function NewPatientPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { register, handleSubmit, control, formState: { errors }, setValue } = useForm();
+  const [isDetectedReadmission, setIsDetectedReadmission] = useState(false);
 
-  const isReadmission = !!searchParams.get('uhid');
+  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
+  const isReadmission = !!searchParams.get('uhid') || isDetectedReadmission;
 
   useEffect(() => {
     const uhid = searchParams.get('uhid');
@@ -82,6 +86,7 @@ export default function NewPatientPage() {
         if (res.data.items && res.data.items.length > 0) {
           const lastRecord = res.data.items[0];
           setValue('name', lastRecord.name);
+          setIsDetectedReadmission(true);
           toast((t) => (
             <div className="flex flex-col gap-1">
               <p className="font-bold text-sm">Patient Found: {lastRecord.name}</p>
@@ -120,6 +125,8 @@ export default function NewPatientPage() {
               <Input
                 label="Full Name" placeholder="Patient full name" required icon={User}
                 error={errors.name?.message}
+                readOnly={isReadmission && isRestricted}
+                className={isReadmission && isRestricted ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
                 {...register('name', { required: 'Name is required', minLength: { value: 2, message: 'Min 2 characters' } })}
               />
             </div>
@@ -127,6 +134,8 @@ export default function NewPatientPage() {
             <Input
               label="UHID" placeholder="JPH20261234" required icon={Hash}
               error={errors.uhid?.message}
+              readOnly={isReadmission && isRestricted}
+              className={isReadmission && isRestricted ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
               {...register('uhid', { 
                 required: 'UHID is required', 
                 minLength: { value: 11, message: 'UHID must be 11 chars' },
@@ -135,6 +144,22 @@ export default function NewPatientPage() {
                 onBlur: handleUhidBlur
               })}
             />
+
+            {isDetectedReadmission && isRestricted && (
+              <div className="sm:col-span-2 mt-[-10px]">
+                <button 
+                  type="button" 
+                  onClick={() => { 
+                    setIsDetectedReadmission(false); 
+                    setValue('uhid', ''); 
+                    setValue('name', ''); 
+                  }}
+                  className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-bold hover:bg-blue-100 transition-colors"
+                >
+                  Entered wrong UHID? Click here to reset and try again
+                </button>
+              </div>
+            )}
 
             <Input
               label="IP Number" placeholder="IP2026/001" required icon={Hash}
