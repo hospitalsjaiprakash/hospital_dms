@@ -25,7 +25,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 // ── OpenCV Helper Functions ──────────────────────────────────────────────────
 
-function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetHeight) {
+function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetHeight, filter = 'original') {
   let src = cv.imread(srcCanvas);
   let dst = new cv.Mat();
   let dsize = new cv.Size(targetWidth, targetHeight);
@@ -49,6 +49,14 @@ function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetH
   // Get transformation matrix and warp
   let M = cv.getPerspectiveTransform(srcTri, dstTri);
   cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+  // Apply filters
+  if (filter === 'grayscale' || filter === 'bw') {
+    cv.cvtColor(dst, dst, cv.COLOR_RGBA2GRAY, 0);
+    if (filter === 'bw') {
+      cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 10);
+    }
+  }
 
   // Create destination canvas
   const dstCanvas = document.createElement('canvas');
@@ -131,6 +139,8 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [cvReady, setCvReady] = useState(false);
   const [magnifier, setMagnifier] = useState(null);
   const [activeId, setActiveId] = useState(null); // For drag overlay
+  const [currentFilter, setCurrentFilter] = useState('original');
+  const [livePreviewUrl, setLivePreviewUrl] = useState(null);
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -289,6 +299,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
       }
 
       setPoints(bestPoints);
+      setCurrentFilter('original'); // Reset filter for new scan
       setStep('crop');
     }, 'image/jpeg', 0.92);
   };
@@ -366,7 +377,13 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
       dstCanvas.toBlob(blob => {
         const preview = URL.createObjectURL(blob);
-        setPages(prev => [...prev, { id: Date.now(), originalBlob: currentOriginal.blob, croppedBlob: blob, preview }]);
+        setPages(prev => [...prev, { 
+          id: Date.now(), 
+          originalBlob: currentOriginal.blob, 
+          croppedBlob: blob, 
+          preview,
+          filter: currentFilter
+        }]);
         toast.success(`Page ${pages.length + 1} scanned! ✅`);
         setStep('review');
         setIsProcessing(false);
@@ -377,6 +394,45 @@ export default function DocumentScanner({ onComplete, onClose }) {
       setIsProcessing(false);
     }
   };
+
+  // ── Live Preview logic ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (step === 'crop' && currentOriginal && cvReady && window.cv && points.length === 4) {
+      const updateLivePreview = async () => {
+        try {
+          const img = new Image();
+          img.src = currentOriginal.url;
+          await new Promise(r => { img.onload = r; });
+
+          const srcCanvas = document.createElement('canvas');
+          // Use a smaller canvas for live preview to keep it fast
+          const scale = 0.3; 
+          srcCanvas.width = currentOriginal.width * scale;
+          srcCanvas.height = currentOriginal.height * scale;
+          const ctx = srcCanvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, srcCanvas.width, srcCanvas.height);
+
+          const scaledPoints = points.map(p => ({ x: p.x * scale, y: p.y * scale }));
+          
+          const tl = scaledPoints[0], tr = scaledPoints[1], br = scaledPoints[2], bl = scaledPoints[3];
+          const targetW = Math.max(Math.hypot(tr.x - tl.x, tr.y - tl.y), Math.hypot(br.x - bl.x, br.y - bl.y));
+          const targetH = Math.max(Math.hypot(bl.x - tl.x, bl.y - tl.y), Math.hypot(br.x - tr.x, br.y - tr.y));
+
+          const dstCanvas = applyPerspectiveTransformCV(window.cv, srcCanvas, scaledPoints, targetW, targetH, currentFilter);
+          
+          if (livePreviewUrl) URL.revokeObjectURL(livePreviewUrl);
+          dstCanvas.toBlob(blob => {
+            setLivePreviewUrl(URL.createObjectURL(blob));
+          }, 'image/jpeg', 0.7);
+        } catch (err) {
+          console.error("Live preview failed", err);
+        }
+      };
+
+      const timer = setTimeout(updateLivePreview, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [step, points, currentFilter, cvReady]);
 
   // ── Page management ─────────────────────────────────────────────────────────
   const movePage = (index, dir) => {
@@ -616,17 +672,44 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         </div>
 
-        <div className="h-24 bg-gray-900 border-t border-white/10 flex items-center justify-between px-6">
-          <button
-            onClick={() => setStep('camera')}
-            className="flex items-center gap-2 text-white/60 font-bold text-sm hover:text-white transition-colors"
-          >
-            <RotateCw size={16} /> Retake
-          </button>
-          <Button onClick={handleCropComplete} loading={isProcessing}>
-            <Check size={18} className="mr-2" /> Confirm Page
-          </Button>
+        <div className="h-44 bg-gray-900 border-t border-white/10 flex flex-col items-center justify-between py-4 px-6 gap-3">
+          <div className="flex gap-2 bg-black/40 p-1 rounded-xl">
+            {['original', 'grayscale', 'bw'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setCurrentFilter(f)}
+                className={clsx(
+                  "px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
+                  currentFilter === f ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white"
+                )}
+              >
+                {f === 'bw' ? 'B&W' : f}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex w-full items-center justify-between">
+            <button
+              onClick={() => setStep('camera')}
+              className="flex items-center gap-2 text-white/60 font-bold text-sm hover:text-white transition-colors"
+            >
+              <RotateCw size={16} /> Retake
+            </button>
+            <Button onClick={handleCropComplete} loading={isProcessing}>
+              <Check size={18} className="mr-2" /> Confirm Page
+            </Button>
+          </div>
         </div>
+
+        {/* Live Perspective Preview Floating Window */}
+        {livePreviewUrl && (
+          <div className="absolute top-16 right-4 w-28 aspect-[3/4] bg-gray-800 rounded-lg border-2 border-blue-500 shadow-2xl overflow-hidden pointer-events-none z-40">
+             <img src={livePreviewUrl} className="w-full h-full object-cover" alt="live preview" />
+             <div className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-[8px] text-white font-bold text-center py-0.5">
+               PREVIEW
+             </div>
+          </div>
+        )}
       </div>
     );
   };
