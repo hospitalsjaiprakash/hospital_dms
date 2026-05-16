@@ -43,10 +43,13 @@ function EditPatientModal({ patient, open, onClose }) {
     defaultValues: {
       name: patient.name,
       ip_number: patient.ip_number,
+      uhid: patient.uhid,
+      admission_date: patient.admission_date ? new Date(new Date(patient.admission_date).getTime() - new Date(patient.admission_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      notes: patient.notes || '',
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status,
-      discharge_date: patient.discharge_date ? new Date(patient.discharge_date).toISOString().slice(0, 16) : '',
-      settlement_date: patient.settlement_date ? new Date(patient.settlement_date).toISOString().slice(0, 16) : '',
+      discharge_date: patient.discharge_date ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      settlement_date: patient.settlement_date ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
     }
   });
 
@@ -88,7 +91,7 @@ function EditPatientModal({ patient, open, onClose }) {
     }
   };
 
-  const isPCC = user?.role === 'pcc';
+  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Patient">
@@ -106,9 +109,34 @@ function EditPatientModal({ patient, open, onClose }) {
               {...register('ip_number', { required: 'IP required' })} />
             {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
           </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('uhid', { 
+                required: 'UHID required',
+                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
+              })} />
+            {errors.uhid && <p className="text-xs text-red-500">{errors.uhid.message}</p>}
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Admission Date & Time *</label>
+            <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('admission_date', { required: 'Admission date required' })} />
+            {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
+          </div>
         </div>
 
-        {!isPCC && (
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
+          <textarea 
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
+            {...register('notes')}
+            placeholder="Additional notes..."
+          />
+        </div>
+
+        {!isRestricted && (
           <>
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>

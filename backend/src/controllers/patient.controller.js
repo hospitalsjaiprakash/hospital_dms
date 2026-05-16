@@ -118,13 +118,13 @@ const updatePatient = async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
 
-  // PCC has limited update access
-  if (req.user.role === 'pcc') {
-    const allowedFields = ['name', 'notes'];
+  // PCC and Nursing have limited update access
+  if (['pcc', 'nursing'].includes(req.user.role)) {
+    const allowedFields = ['name', 'uhid', 'ip_number', 'admission_date', 'notes'];
     const requestedFields = Object.keys(updates);
     const disallowed = requestedFields.filter(f => !allowedFields.includes(f));
     if (disallowed.length) {
-      return sendError(res, `PCC cannot update: ${disallowed.join(', ')}`, 403);
+      return sendError(res, `${req.user.role.toUpperCase()} cannot update: ${disallowed.join(', ')}`, 403);
     }
   }
 

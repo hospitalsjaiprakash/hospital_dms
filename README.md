@@ -104,7 +104,7 @@ docker-compose logs -f backend
 | Edit own uploads | ✅ | ✅ | ✅ | ✅ |
 | Delete own uploads | ✅ | ✅ | ✅ | ✅ |
 | Edit/Delete Others | ❌ | ❌ | ✅ | ✅ |
-| Patient management | Limited | ✅ | ✅ | ✅ |
+| Patient management | Limited | Limited | ✅ | ✅ |
 | User management | ❌ | ❌ | ❌ | ✅ |
 | View audit logs | ❌ | ❌ | ✅ | ✅ |
 
