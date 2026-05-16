@@ -164,16 +164,16 @@ export default function DocumentActionModal({ docId, open, onClose }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3">
-            <Button variant="secondary" onClick={() => setViewDoc(doc)} className="flex-1">
-              <Eye size={16} /> Preview
+          <div className="grid grid-cols-3 gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setViewDoc(doc)} className="px-2">
+              <Eye size={16} /> <span className="truncate">Preview</span>
             </Button>
-            <Button variant="secondary" onClick={handleDownload} className="flex-1">
-              <Download size={16} /> Download
+            <Button variant="secondary" size="sm" onClick={handleDownload} className="px-2">
+              <Download size={16} /> <span className="truncate">Download</span>
             </Button>
             {hasEditPermission && (
-              <Button variant="danger" onClick={() => setDeleteConfirmOpen(true)} className="flex-1">
-                <Trash2 size={16} /> Delete
+              <Button variant="danger" size="sm" onClick={() => setDeleteConfirmOpen(true)} className="px-2">
+                <Trash2 size={16} /> <span className="truncate">Delete</span>
               </Button>
             )}
           </div>
@@ -234,7 +234,7 @@ export default function DocumentActionModal({ docId, open, onClose }) {
                   />
                 </div>
 
-                <div className="flex justify-end pt-1">
+                <div className="flex justify-end pt-2 pb-6">
                   <Button type="submit" loading={updating}>Save Changes</Button>
                 </div>
               </form>
