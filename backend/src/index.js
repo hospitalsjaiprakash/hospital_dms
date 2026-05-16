@@ -77,9 +77,16 @@ app.use((err, req, res, next) => {
 
   if (err.code === '23505') return sendError(res, 'A record with this value already exists', 409);
   if (err.code === '23503') return sendError(res, 'Referenced record not found', 400);
-  if (err.name === 'MulterError') return sendError(res, `File upload error: ${err.message}`, 400);
+  if (err.name === 'MulterError' || err.message.includes('Invalid file type')) {
+    return sendError(res, `File upload error: ${err.message}`, 400);
+  }
 
-  sendError(res, process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message, 500);
+  const statusCode = err.status || err.statusCode || 500;
+  const message = process.env.NODE_ENV === 'production' && statusCode === 500 
+    ? 'Internal server error' 
+    : err.message;
+
+  sendError(res, message, statusCode);
 });
 
 // ── Startup ───────────────────────────────────────────────────────────────────

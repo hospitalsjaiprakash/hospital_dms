@@ -7,7 +7,7 @@ const archiver = require('archiver');
 const https = require('https');
 const sharp = require('sharp');
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'image/webp'];
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
 
 /**
@@ -35,7 +35,7 @@ const uploadDocument = async (req, res) => {
   let fileBuffer = req.file.buffer;
 
   // Compress images if over 1MB
-  if (['image/jpeg', 'image/png'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
+  if (['image/jpeg', 'image/png', 'image/webp'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
     fileBuffer = await sharp(fileBuffer)
       .resize({ width: 1920, withoutEnlargement: true })
       .jpeg({ quality: 75 })
@@ -59,10 +59,10 @@ const uploadDocument = async (req, res) => {
 
   let finalFileName = req.file.originalname;
   if (!finalFileName || finalFileName === 'blob' || finalFileName === 'image') {
-    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
     finalFileName = `${doc_type}_${Date.now()}.${ext}`;
   } else if (!finalFileName.includes('.')) {
-    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+    const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
     finalFileName = `${finalFileName}.${ext}`;
   }
 
@@ -177,7 +177,7 @@ const updateDocument = async (req, res) => {
     }
     
     let fileBuffer = req.file.buffer;
-    if (['image/jpeg', 'image/png'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
       fileBuffer = await sharp(fileBuffer).resize({ width: 1920, withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
       if (fileBuffer.length > MAX_FILE_SIZE) return sendError(res, 'File too large even after compression. Max 1MB allowed.', 400);
     }
@@ -195,10 +195,10 @@ const updateDocument = async (req, res) => {
     newUrl = url;
     newFileName = req.file.originalname;
     if (!newFileName || newFileName === 'blob' || newFileName === 'image') {
-      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
       newFileName = `${finalDocType}_${Date.now()}.${ext}`;
     } else if (!newFileName.includes('.')) {
-      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : 'jpg';
+      const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
       newFileName = `${newFileName}.${ext}`;
     }
     
