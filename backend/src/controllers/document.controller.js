@@ -98,9 +98,11 @@ const getPatientDocuments = async (req, res) => {
   const [countRes, docsRes] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM documents d ${where}`, params),
     db.query(
-      `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role
+      `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role,
+               up_u.name as updated_by_name, up_u.role as updated_by_role
        FROM documents d
        JOIN users u ON u.id = d.uploaded_by
+       LEFT JOIN users up_u ON up_u.id = d.updated_by
        ${where}
        ORDER BY d.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -126,9 +128,11 @@ const getDocument = async (req, res) => {
   const { id } = req.params;
 
   const docRes = await db.query(
-    `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role
+    `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role,
+            up_u.name as updated_by_name, up_u.role as updated_by_role
      FROM documents d
      JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN users up_u ON up_u.id = d.updated_by
      WHERE d.id = $1`,
     [id]
   );
@@ -348,10 +352,13 @@ const getAllDocuments = async (req, res) => {
       params
     ),
     db.query(
-      `SELECT d.*, p.name as patient_name, p.uhid as patient_uhid, u.name as uploaded_by_name, u.role as uploader_role
+      `SELECT d.*, p.name as patient_name, p.uhid as patient_uhid, 
+               u.name as uploaded_by_name, u.role as uploader_role,
+               up_u.name as updated_by_name, up_u.role as updated_by_role
        FROM documents d
        JOIN patients p ON p.id = d.patient_id
        JOIN users u ON u.id = d.uploaded_by
+       LEFT JOIN users up_u ON up_u.id = d.updated_by
        ${where}
        ORDER BY d.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,

@@ -278,6 +278,11 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
           {format(new Date(doc.created_at), 'dd MMM yyyy, hh:mm a')}
         </p>
         <p className="text-xs text-gray-400 truncate">by {doc.uploaded_by_name}</p>
+        {doc.updated_by && (
+          <p className="text-[10px] text-blue-500 font-bold truncate mt-0.5 bg-blue-50 rounded px-1 w-fit">
+            Edited by {doc.updated_by_name}
+          </p>
+        )}
         {doc.notes && <p className="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-md px-2 py-1 truncate">{doc.notes}</p>}
         {/* Per-document download button */}
         {fileUrl && (

@@ -161,6 +161,19 @@ export default function DocumentActionModal({ docId, open, onClose }) {
                 <p className="text-sm font-medium text-gray-900">{doc.uploaded_by_name} ({doc.uploader_role.toUpperCase()})</p>
               </div>
             </div>
+
+            {doc.updated_by && (
+              <div className="mt-2 pt-2 border-t border-gray-200/60 bg-blue-50/30 -mx-4 px-4 py-2">
+                <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider">Last Edited By</p>
+                <div className="flex items-center justify-between mt-1">
+                  <div className="flex items-center gap-1.5">
+                    <User size={13} className="text-blue-500" />
+                    <p className="text-xs font-bold text-gray-900">{doc.updated_by_name} ({doc.updated_by_role.toUpperCase()})</p>
+                  </div>
+                  <p className="text-[10px] text-gray-500 font-medium">{format(new Date(doc.updated_at), 'dd MMM, hh:mm a')}</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}

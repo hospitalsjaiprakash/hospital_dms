@@ -189,14 +189,22 @@ export default function DocumentsPage() {
                   </div>
 
                   {/* Uploader */}
-                  <div className="lg:col-span-3 mt-2 lg:mt-0 flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
-                      <User size={12} className="text-gray-500" />
+                  <div className="lg:col-span-3 mt-2 lg:mt-0 flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
+                        <User size={12} className="text-gray-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-700 truncate">{doc.uploaded_by_name}</p>
+                        <p className="text-[10px] text-gray-400 uppercase">{doc.uploader_role}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-700 truncate">{doc.uploaded_by_name}</p>
-                      <p className="text-[10px] text-gray-400 uppercase">{doc.uploader_role}</p>
-                    </div>
+                    {doc.updated_by && (
+                      <div className="flex items-center gap-1.5 pl-8">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                        <p className="text-[10px] text-blue-600 font-bold truncate">Edited by {doc.updated_by_name}</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Date */}
