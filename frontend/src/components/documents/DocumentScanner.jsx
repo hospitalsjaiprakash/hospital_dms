@@ -22,6 +22,7 @@ import {
   arrayMove
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import clsx from 'clsx';
 
 // ── OpenCV Helper Functions ──────────────────────────────────────────────────
 
