@@ -6,7 +6,11 @@ const ExcelJS = require('exceljs');
 
 const createPatient = async (req, res) => {
   const { uhid, name, admission_date, ip_number, notes } = req.body;
-  if (!ip_number) return sendError(res, 'IP Number is required', 400);
+  
+  if (!ip_number || String(ip_number).trim() === '') {
+    console.log('DEBUG: Missing IP Number in request body:', req.body);
+    return sendError(res, 'IP Number is required. Please check if the field is filled.', 400);
+  }
 
   // Check if patient is already active with this UHID
   const activeAdmission = await db.query(
