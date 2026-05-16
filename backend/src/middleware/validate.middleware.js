@@ -34,6 +34,9 @@ const schemas = {
       'any.required': 'UHID is required'
     }),
     name: Joi.string().min(2).max(200).required(),
+    ip_number: Joi.string().min(1).max(100).required().messages({
+      'any.required': 'IP Number is required'
+    }),
     admission_date: Joi.date().required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
@@ -48,6 +51,7 @@ const schemas = {
     settlement_status: Joi.string().valid('pending', 'completed').optional(),
     discharge_date: Joi.date().iso().optional().allow(null),
     settlement_date: Joi.date().iso().optional().allow(null),
+    ip_number: Joi.string().min(1).max(100).optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 

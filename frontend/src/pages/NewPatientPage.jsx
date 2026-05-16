@@ -34,12 +34,7 @@ export default function NewPatientPage() {
   const { mutate: createPatient, isLoading: isCreating } = useMutation(patientApi.create);
 
   const onSubmit = async (data) => {
-    console.log('Submitting Patient Data:', data);
     try {
-      if (!data.ip_number) {
-        toast.error('IP Number is missing in the form data');
-        return;
-      }
       if (docFiles.length > 0 && !data.doc_type) {
         toast.error('Please select a document type for the attached files');
         return;
