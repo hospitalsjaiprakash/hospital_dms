@@ -26,7 +26,7 @@ import clsx from 'clsx';
 
 // ── OpenCV Helper Functions ──────────────────────────────────────────────────
 
-function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetHeight, filter = 'original') {
+function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetHeight) {
   let src = cv.imread(srcCanvas);
   let dst = new cv.Mat();
   let dsize = new cv.Size(targetWidth, targetHeight);
@@ -50,14 +50,6 @@ function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetH
   // Get transformation matrix and warp
   let M = cv.getPerspectiveTransform(srcTri, dstTri);
   cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-
-  // Apply filters
-  if (filter === 'grayscale' || filter === 'bw') {
-    cv.cvtColor(dst, dst, cv.COLOR_RGBA2GRAY, 0);
-    if (filter === 'bw') {
-      cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 10);
-    }
-  }
 
   // Create destination canvas
   const dstCanvas = document.createElement('canvas');
@@ -140,7 +132,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [cvReady, setCvReady] = useState(false);
   const [magnifier, setMagnifier] = useState(null);
   const [activeId, setActiveId] = useState(null); // For drag overlay
-  const [currentFilter, setCurrentFilter] = useState('original');
   const [livePreviewUrl, setLivePreviewUrl] = useState(null);
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
@@ -300,7 +291,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
       }
 
       setPoints(bestPoints);
-      setCurrentFilter('original'); // Reset filter for new scan
       setStep('crop');
     }, 'image/jpeg', 0.92);
   };
@@ -382,8 +372,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
           id: Date.now(), 
           originalBlob: currentOriginal.blob, 
           croppedBlob: blob, 
-          preview,
-          filter: currentFilter
+          preview
         }]);
         toast.success(`Page ${pages.length + 1} scanned! ✅`);
         setStep('review');
@@ -419,7 +408,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
           const targetW = Math.max(Math.hypot(tr.x - tl.x, tr.y - tl.y), Math.hypot(br.x - bl.x, br.y - bl.y));
           const targetH = Math.max(Math.hypot(bl.x - tl.x, bl.y - tl.y), Math.hypot(br.x - tr.x, br.y - tr.y));
 
-          const dstCanvas = applyPerspectiveTransformCV(window.cv, srcCanvas, scaledPoints, targetW, targetH, currentFilter);
+          const dstCanvas = applyPerspectiveTransformCV(window.cv, srcCanvas, scaledPoints, targetW, targetH);
           
           if (livePreviewUrl) URL.revokeObjectURL(livePreviewUrl);
           dstCanvas.toBlob(blob => {
@@ -433,7 +422,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
       const timer = setTimeout(updateLivePreview, 100);
       return () => clearTimeout(timer);
     }
-  }, [step, points, currentFilter, cvReady]);
+  }, [step, points, cvReady]);
 
   // ── Page management ─────────────────────────────────────────────────────────
   const movePage = (index, dir) => {
@@ -558,7 +547,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const renderCrop = () => {
     if (!currentOriginal) return null;
     const { width: iw, height: ih } = currentOriginal;
-    const toPercent = (val, total) => `${(val / total) * 100}%`;
 
     return (
       <div className="h-full flex flex-col bg-gray-950">
@@ -609,23 +597,27 @@ export default function DocumentScanner({ onComplete, onClose }) {
               alt="captured"
             />
 
-            <svg className="absolute inset-0 w-full h-full overflow-visible">
+            <svg 
+              className="absolute inset-0 w-full h-full overflow-visible"
+              viewBox={`0 0 ${iw} ${ih}`}
+              preserveAspectRatio="none"
+            >
               <defs>
                 <mask id="cropMask">
-                  <rect width="100%" height="100%" fill="white" />
+                  <rect width={iw} height={ih} fill="white" />
                   <polygon
-                    points={points.map(p => `${toPercent(p.x, iw)},${toPercent(p.y, ih)}`).join(' ')}
+                    points={points.map(p => `${p.x},${p.y}`).join(' ')}
                     fill="black"
                   />
                 </mask>
               </defs>
-              <rect width="100%" height="100%" fill="rgba(0,0,0,0.5)" mask="url(#cropMask)" />
+              <rect width={iw} height={ih} fill="rgba(0,0,0,0.5)" mask="url(#cropMask)" />
 
               <polygon
-                points={points.map(p => `${toPercent(p.x, iw)},${toPercent(p.y, ih)}`).join(' ')}
+                points={points.map(p => `${p.x},${p.y}`).join(' ')}
                 fill="rgba(59,130,246,0.15)"
                 stroke="#60a5fa"
-                strokeWidth="2"
+                strokeWidth={2 * (iw / 400)} // scale stroke width
               />
 
               {points.map((p, i) => {
@@ -633,9 +625,11 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 return (
                   <line
                     key={`line-${i}`}
-                    x1={toPercent(p.x, iw)} y1={toPercent(p.y, ih)}
-                    x2={toPercent(next.x, iw)} y2={toPercent(next.y, ih)}
-                    stroke="#93c5fd" strokeWidth="1.5" strokeDasharray="6 3"
+                    x1={p.x} y1={p.y}
+                    x2={next.x} y2={next.y}
+                    stroke="#93c5fd" 
+                    strokeWidth={1.5 * (iw / 400)} 
+                    strokeDasharray={`${6 * (iw / 400)} ${3 * (iw / 400)}`}
                   />
                 );
               })}
@@ -643,27 +637,27 @@ export default function DocumentScanner({ onComplete, onClose }) {
               {points.map((p, i) => (
                 <g key={`handle-${i}`}>
                   <circle
-                    cx={toPercent(p.x, iw)}
-                    cy={toPercent(p.y, ih)}
-                    r="18"
+                    cx={p.x}
+                    cy={p.y}
+                    r={18 * (iw / 400)}
                     fill="transparent"
                     style={{ cursor: 'move', pointerEvents: 'all' }}
                     onMouseDown={e => onMouseDown(e, i)}
                     onTouchStart={e => onTouchStart(e, i)}
                   />
                   <circle
-                    cx={toPercent(p.x, iw)}
-                    cy={toPercent(p.y, ih)}
-                    r="10"
+                    cx={p.x}
+                    cy={p.y}
+                    r={10 * (iw / 400)}
                     fill="white"
                     stroke="#3b82f6"
-                    strokeWidth="3"
+                    strokeWidth={3 * (iw / 400)}
                     style={{ pointerEvents: 'none' }}
                   />
                   <circle
-                    cx={toPercent(p.x, iw)}
-                    cy={toPercent(p.y, ih)}
-                    r="4"
+                    cx={p.x}
+                    cy={p.y}
+                    r={4 * (iw / 400)}
                     fill="#3b82f6"
                     style={{ pointerEvents: 'none' }}
                   />
@@ -673,21 +667,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         </div>
 
-        <div className="h-44 bg-gray-900 border-t border-white/10 flex flex-col items-center justify-between py-4 px-6 gap-3">
-          <div className="flex gap-2 bg-black/40 p-1 rounded-xl">
-            {['original', 'grayscale', 'bw'].map((f) => (
-              <button
-                key={f}
-                onClick={() => setCurrentFilter(f)}
-                className={clsx(
-                  "px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
-                  currentFilter === f ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white"
-                )}
-              >
-                {f === 'bw' ? 'B&W' : f}
-              </button>
-            ))}
-          </div>
+        <div className="h-24 bg-gray-900 border-t border-white/10 flex items-center justify-between px-6">
 
           <div className="flex w-full items-center justify-between">
             <button
