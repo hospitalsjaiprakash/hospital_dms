@@ -177,11 +177,11 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       // 2. Draw sophisticated GPS Tag Overlay
       const scale = canvas.width / 1000;
-      const cardHeight = 220 * scale; // Increased for more data
-      const cardPadding = 15 * scale;
+      const cardHeight = 240 * scale; 
+      const cardPadding = 20 * scale;
       
       // Draw background card (semi-transparent dark)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
       ctx.fillRect(0, canvas.height - cardHeight, canvas.width, cardHeight);
 
       let textX = cardPadding;
@@ -194,14 +194,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         ctx.drawImage(mapImg, cardPadding, mapY, mapSize, mapSize);
         
         // Map border
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2 * scale;
         ctx.strokeRect(cardPadding, mapY, mapSize, mapSize);
 
         // Map center crosshair dot
-        ctx.fillStyle = '#3b82f6'; // Blue dot
+        ctx.fillStyle = '#3b82f6';
         ctx.beginPath();
-        ctx.arc(cardPadding + mapSize/2, mapY + mapSize/2, 5 * scale, 0, 2 * Math.PI);
+        ctx.arc(cardPadding + mapSize/2, mapY + mapSize/2, 6 * scale, 0, 2 * Math.PI);
         ctx.fill();
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2 * scale;
@@ -211,50 +211,64 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       }
 
       const now = liveTime;
-      const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-      const tzOffset = `GMT ${now.getTimezoneOffset() <= 0 ? '+' : '-'}${Math.abs(Math.floor(now.getTimezoneOffset() / 60)).toString().padStart(2, '0')}:${Math.abs(now.getTimezoneOffset() % 60).toString().padStart(2, '0')}`;
-
+      const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+      
       // Text drawing
       ctx.fillStyle = 'white';
       
-      // Line 0: Header Badge
-      ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
-      ctx.fillStyle = '#3b82f6'; // blue-500
-      ctx.fillText("GPS CAMERA | GEO-TAGGING", textX, canvas.height - cardHeight + cardPadding + (10 * scale));
+      // Line 0: Header Badge with Pin Icon
+      ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
+      ctx.fillStyle = '#60a5fa'; // blue-400
+      ctx.fillText("📍 GPS PHOTO TAG", textX, canvas.height - cardHeight + cardPadding + (10 * scale));
 
-      // Line 1: Location Title (City, State, Country)
+      // Line 1: Location Title (City, State)
       ctx.fillStyle = 'white';
-      const locationTitle = address ? address.split(',').slice(0, 3).join(',') : 'Location Tagging...';
-      ctx.font = `bold ${26 * scale}px Inter, sans-serif`;
-      ctx.fillText(locationTitle + " 🇮🇳", textX, canvas.height - cardHeight + cardPadding + (40 * scale));
+      const addressParts = address ? address.split(',').map(s => s.trim()) : [];
+      const cityState = addressParts.length > 2 ? `${addressParts[1]}, ${addressParts[2]}` : 'Locating...';
+      ctx.font = `bold ${32 * scale}px Inter, sans-serif`;
+      ctx.fillText(cityState, textX, canvas.height - cardHeight + cardPadding + (45 * scale));
 
-      // Line 2: Full Address (Smaller)
-      ctx.font = `${16 * scale}px Inter, sans-serif`;
-      const addressLines = address ? address.split(',').slice(3).join(',').match(/.{1,65}/g) || [] : [];
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      let currentY = canvas.height - cardHeight + cardPadding + (65 * scale);
-      addressLines.slice(0, 2).forEach(line => {
-        ctx.fillText(line.trim(), textX, currentY);
-        currentY += 20 * scale;
-      });
-
-      // Line 3: Lat/Long & Hospital
-      ctx.fillStyle = 'white';
-      ctx.font = `bold ${18 * scale}px Inter, sans-serif`;
-      const locStr = gpsData 
-        ? `Lat ${gpsData.latitude.toFixed(6)}° Long ${gpsData.longitude.toFixed(6)}°`
-        : 'Lat -- Long --';
-      ctx.fillText(locStr, textX, currentY + (10 * scale));
+      // Line 2: Full Address (Smaller, Multi-line if needed)
+      ctx.font = `${18 * scale}px Inter, sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      const fullAddress = address || 'Fetching full address details...';
+      const addressWords = fullAddress.split(' ');
+      let line = '';
+      let currentY = canvas.height - cardHeight + cardPadding + (75 * scale);
       
-      ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
-      ctx.fillStyle = '#fbbf24'; // amber-400
-      ctx.fillText("JPHRC ROURKELA HOSPITAL", textX, currentY + (28 * scale));
+      for (let n = 0; n < addressWords.length; n++) {
+        const testLine = line + addressWords[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > (canvas.width - textX - cardPadding) && n > 0) {
+          ctx.fillText(line, textX, currentY);
+          line = addressWords[n] + ' ';
+          currentY += 22 * scale;
+        } else {
+          line = testLine;
+        }
+        if (currentY > canvas.height - 80 * scale) break; // Don't overlap bottom info
+      }
+      ctx.fillText(line, textX, currentY);
 
-      // Line 4: DateTime
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.font = `500 ${16 * scale}px Inter, sans-serif`;
-      ctx.fillText(`${dateStr} ${timeStr} ${tzOffset}`, textX, currentY + (48 * scale));
+      // Line 3: Lat/Long Info
+      ctx.fillStyle = '#fcd34d'; // amber-300
+      ctx.font = `bold ${20 * scale}px Roboto Mono, monospace`;
+      const latStr = gpsData ? gpsData.latitude.toFixed(6) : '--.------';
+      const lonStr = gpsData ? gpsData.longitude.toFixed(6) : '--.------';
+      const coordStr = `LAT: ${latStr}°  |  LONG: ${lonStr}°`;
+      ctx.fillText(coordStr, textX, canvas.height - 45 * scale);
+      
+      // Line 4: Hospital Name & Time
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
+      ctx.fillText("JPHRC JAI PRAKASH HOSPITAL", textX, canvas.height - 20 * scale);
+      
+      ctx.textAlign = 'right';
+      ctx.font = `italic ${14 * scale}px Inter, sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText(`${dateStr} • ${timeStr}`, canvas.width - cardPadding, canvas.height - 20 * scale);
+      ctx.textAlign = 'left'; // reset
 
       const blob = await new Promise((resolve, reject) =>
         canvas.toBlob(b => b ? resolve(b) : reject(new Error('Empty blob')), 'image/jpeg', 0.90)
