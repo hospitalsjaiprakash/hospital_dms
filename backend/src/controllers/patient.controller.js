@@ -44,35 +44,69 @@ const getPatients = async (req, res) => {
   const { page, limit, offset } = getPaginationParams(req.query);
   const { search, hospital_status, settlement_status, admission_date_from, admission_date_to } = req.query;
 
-  const conditions = [];
-  const params = [];
+  const searchConditions = [];
+  const searchParams = [];
   let idx = 1;
 
   if (search) {
-    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
-    params.push(`%${search}%`);
+    searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+    searchParams.push(`%${search}%`);
     idx++;
   }
-  if (hospital_status) { conditions.push(`p.hospital_status = $${idx++}`); params.push(hospital_status); }
-  if (settlement_status) { conditions.push(`p.settlement_status = $${idx++}`); params.push(settlement_status); }
-  if (admission_date_from) { conditions.push(`p.admission_date >= $${idx++}`); params.push(admission_date_from); }
-  if (admission_date_to) { conditions.push(`p.admission_date <= $${idx++}`); params.push(admission_date_to); }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
 
-  const [countRes, patientsRes] = await Promise.all([
-    db.query(`SELECT COUNT(*) FROM patients p ${where}`, params),
-    db.query(
-      `SELECT p.*, 
+  const statusConditions = [];
+  const statusParams = [];
+
+  if (hospital_status) {
+    statusConditions.push(`sub.hospital_status = $${idx++}`);
+    statusParams.push(hospital_status);
+  }
+  if (settlement_status) {
+    statusConditions.push(`sub.settlement_status = $${idx++}`);
+    statusParams.push(settlement_status);
+  }
+  if (admission_date_from) {
+    statusConditions.push(`sub.admission_date >= $${idx++}`);
+    statusParams.push(admission_date_from);
+  }
+  if (admission_date_to) {
+    statusConditions.push(`sub.admission_date <= $${idx++}`);
+    statusParams.push(admission_date_to);
+  }
+
+  const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
+  const allParams = [...searchParams, ...statusParams];
+
+  const countQuery = `
+    SELECT COUNT(*) FROM (
+      SELECT DISTINCT ON (p.uhid) p.uhid, p.hospital_status, p.settlement_status, p.admission_date
+      FROM patients p
+      ${searchWhere}
+      ORDER BY p.uhid, p.admission_date DESC
+    ) sub
+    ${statusWhere}
+  `;
+
+  const dataQuery = `
+    SELECT * FROM (
+      SELECT DISTINCT ON (p.uhid) p.*, 
         u.name as created_by_name,
         (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
-       FROM patients p
-       LEFT JOIN users u ON u.id = p.created_by
-       ${where}
-       ORDER BY p.created_at DESC
-       LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, limit, offset]
-    ),
+      FROM patients p
+      LEFT JOIN users u ON u.id = p.created_by
+      ${searchWhere}
+      ORDER BY p.uhid, p.admission_date DESC
+    ) sub
+    ${statusWhere}
+    ORDER BY sub.admission_date DESC
+    LIMIT $${idx} OFFSET $${idx + 1}
+  `;
+
+  const [countRes, patientsRes] = await Promise.all([
+    db.query(countQuery, allParams),
+    db.query(dataQuery, [...allParams, limit, offset]),
   ]);
 
   return sendPaginated(res, patientsRes.rows, parseInt(countRes.rows[0].count), page, limit);
@@ -234,7 +268,11 @@ const getPatientStats = async (req, res) => {
       COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'pending') as pending_settlement,
       COUNT(*) FILTER (WHERE settlement_status = 'completed') as completed_settlement,
       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as admitted_today
-    FROM patients
+    FROM (
+      SELECT DISTINCT ON (uhid) hospital_status, settlement_status, admission_date, created_at
+      FROM patients
+      ORDER BY uhid, admission_date DESC
+    ) sub
   `);
 
   const docStats = await db.query(`
@@ -305,32 +343,51 @@ const getUploadHistory = async (req, res) => {
 const exportPatientsExcel = async (req, res) => {
   const { search, hospital_status, settlement_status } = req.query;
 
-  const conditions = [];
-  const params = [];
+  const searchConditions = [];
+  const searchParams = [];
   let idx = 1;
 
   if (search) {
-    conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
-    params.push(`%${search}%`);
+    searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+    searchParams.push(`%${search}%`);
     idx++;
   }
-  if (hospital_status) { conditions.push(`p.hospital_status = $${idx++}`); params.push(hospital_status); }
-  if (settlement_status) { conditions.push(`p.settlement_status = $${idx++}`); params.push(settlement_status); }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
 
-  const patientsRes = await db.query(
-    `SELECT p.*,
-      (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count,
+  const statusConditions = [];
+  const statusParams = [];
+
+  if (hospital_status) {
+    statusConditions.push(`sub.hospital_status = $${idx++}`);
+    statusParams.push(hospital_status);
+  }
+  if (settlement_status) {
+    statusConditions.push(`sub.settlement_status = $${idx++}`);
+    statusParams.push(settlement_status);
+  }
+
+  const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
+  const allParams = [...searchParams, ...statusParams];
+
+  const query = `
+    SELECT sub.*,
       (SELECT string_agg(DISTINCT u2.name, ', ') 
        FROM documents d 
        JOIN users u2 ON u2.id = d.uploaded_by 
-       WHERE d.patient_id = p.id AND d.is_deleted = false) as photographers
-     FROM patients p
-     ${where}
-     ORDER BY p.created_at DESC`,
-    params
-  );
+       WHERE d.patient_id = sub.id AND d.is_deleted = false) as photographers
+    FROM (
+      SELECT DISTINCT ON (p.uhid) p.*,
+        (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
+      FROM patients p
+      ${searchWhere}
+      ORDER BY p.uhid, p.admission_date DESC
+    ) sub
+    ${statusWhere}
+    ORDER BY sub.admission_date DESC
+  `;
+
+  const patientsRes = await db.query(query, allParams);
 
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Patients');
