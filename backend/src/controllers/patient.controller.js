@@ -44,69 +44,120 @@ const getPatients = async (req, res) => {
   const { page, limit, offset } = getPaginationParams(req.query);
   const { search, hospital_status, settlement_status, admission_date_from, admission_date_to } = req.query;
 
-  const searchConditions = [];
-  const searchParams = [];
-  let idx = 1;
+  // We only aggregate (showing 1 unique patient row based on latest stay) for "All Patients" and "Active (Admitted)" tabs.
+  // For "Discharged" and "PMJAY" tabs, we show all stays so past stays can be separately settled.
+  const shouldAggregate = !hospital_status || hospital_status === 'active';
 
-  if (search) {
-    searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
-    searchParams.push(`%${search}%`);
-    idx++;
-  }
+  let countQuery, dataQuery, queryParams, finalIdx;
 
-  const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
+  if (shouldAggregate) {
+    const searchConditions = [];
+    const searchParams = [];
+    let idx = 1;
 
-  const statusConditions = [];
-  const statusParams = [];
+    if (search) {
+      searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+      searchParams.push(`%${search}%`);
+      idx++;
+    }
 
-  if (hospital_status) {
-    statusConditions.push(`sub.hospital_status = $${idx++}`);
-    statusParams.push(hospital_status);
-  }
-  if (settlement_status) {
-    statusConditions.push(`sub.settlement_status = $${idx++}`);
-    statusParams.push(settlement_status);
-  }
-  if (admission_date_from) {
-    statusConditions.push(`sub.admission_date >= $${idx++}`);
-    statusParams.push(admission_date_from);
-  }
-  if (admission_date_to) {
-    statusConditions.push(`sub.admission_date <= $${idx++}`);
-    statusParams.push(admission_date_to);
-  }
+    const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
 
-  const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
-  const allParams = [...searchParams, ...statusParams];
+    const statusConditions = [];
+    const statusParams = [];
 
-  const countQuery = `
-    SELECT COUNT(*) FROM (
-      SELECT DISTINCT ON (p.uhid) p.uhid, p.hospital_status, p.settlement_status, p.admission_date
-      FROM patients p
-      ${searchWhere}
-      ORDER BY p.uhid, p.admission_date DESC
-    ) sub
-    ${statusWhere}
-  `;
+    if (hospital_status) {
+      statusConditions.push(`sub.hospital_status = $${idx++}`);
+      statusParams.push(hospital_status);
+    }
+    if (settlement_status) {
+      statusConditions.push(`sub.settlement_status = $${idx++}`);
+      statusParams.push(settlement_status);
+    }
+    if (admission_date_from) {
+      statusConditions.push(`sub.admission_date >= $${idx++}`);
+      statusParams.push(admission_date_from);
+    }
+    if (admission_date_to) {
+      statusConditions.push(`sub.admission_date <= $${idx++}`);
+      statusParams.push(admission_date_to);
+    }
 
-  const dataQuery = `
-    SELECT * FROM (
-      SELECT DISTINCT ON (p.uhid) p.*, 
+    const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
+    queryParams = [...searchParams, ...statusParams];
+    finalIdx = idx;
+
+    countQuery = `
+      SELECT COUNT(*) FROM (
+        SELECT DISTINCT ON (p.uhid) p.uhid, p.hospital_status, p.settlement_status, p.admission_date
+        FROM patients p
+        ${searchWhere}
+        ORDER BY p.uhid, p.admission_date DESC
+      ) sub
+      ${statusWhere}
+    `;
+
+    dataQuery = `
+      SELECT * FROM (
+        SELECT DISTINCT ON (p.uhid) p.*, 
+          u.name as created_by_name,
+          (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
+        FROM patients p
+        LEFT JOIN users u ON u.id = p.created_by
+        ${searchWhere}
+        ORDER BY p.uhid, p.admission_date DESC
+      ) sub
+      ${statusWhere}
+      ORDER BY sub.admission_date DESC
+      LIMIT $${finalIdx} OFFSET $${finalIdx + 1}
+    `;
+  } else {
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+
+    if (search) {
+      conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
+    }
+    if (hospital_status) {
+      conditions.push(`p.hospital_status = $${idx++}`);
+      params.push(hospital_status);
+    }
+    if (settlement_status) {
+      conditions.push(`p.settlement_status = $${idx++}`);
+      params.push(settlement_status);
+    }
+    if (admission_date_from) {
+      conditions.push(`p.admission_date >= $${idx++}`);
+      params.push(admission_date_from);
+    }
+    if (admission_date_to) {
+      conditions.push(`p.admission_date <= $${idx++}`);
+      params.push(admission_date_to);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    queryParams = params;
+    finalIdx = idx;
+
+    countQuery = `SELECT COUNT(*) FROM patients p ${where}`;
+    dataQuery = `
+      SELECT p.*, 
         u.name as created_by_name,
         (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
       FROM patients p
       LEFT JOIN users u ON u.id = p.created_by
-      ${searchWhere}
-      ORDER BY p.uhid, p.admission_date DESC
-    ) sub
-    ${statusWhere}
-    ORDER BY sub.admission_date DESC
-    LIMIT $${idx} OFFSET $${idx + 1}
-  `;
+      ${where}
+      ORDER BY p.admission_date DESC
+      LIMIT $${finalIdx} OFFSET $${finalIdx + 1}
+    `;
+  }
 
   const [countRes, patientsRes] = await Promise.all([
-    db.query(countQuery, allParams),
-    db.query(dataQuery, [...allParams, limit, offset]),
+    db.query(countQuery, queryParams),
+    db.query(dataQuery, [...queryParams, limit, offset]),
   ]);
 
   return sendPaginated(res, patientsRes.rows, parseInt(countRes.rows[0].count), page, limit);
@@ -262,17 +313,28 @@ const bulkUpdatePatients = async (req, res) => {
 const getPatientStats = async (req, res) => {
   const stats = await db.query(`
     SELECT
-      COUNT(*) as total_patients,
-      COUNT(*) FILTER (WHERE hospital_status = 'active') as active_patients,
+      -- total_patients (All Patients tab count) is the count of unique patients
+      (SELECT COUNT(*)::int FROM (
+        SELECT DISTINCT ON (uhid) id FROM patients ORDER BY uhid, admission_date DESC
+      ) t) as total_patients,
+      
+      -- active_patients (Active tab count) is the count of unique active patients
+      (SELECT COUNT(*)::int FROM (
+        SELECT DISTINCT ON (uhid) id FROM patients WHERE hospital_status = 'active' ORDER BY uhid, admission_date DESC
+      ) a) as active_patients,
+      
+      -- discharged_patients (Discharged tab count) is the count of all discharged stays (not aggregated)
       COUNT(*) FILTER (WHERE hospital_status = 'discharged') as discharged_patients,
+      
+      -- pending_settlement (PMJAY Pending tab count) is the count of all pending settlements (not aggregated)
       COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'pending') as pending_settlement,
+      
+      -- completed_settlement (PMJAY Settled tab count) is the count of all completed settlements (not aggregated)
       COUNT(*) FILTER (WHERE settlement_status = 'completed') as completed_settlement,
+      
+      -- admitted_today is the count of all admissions today (not aggregated)
       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as admitted_today
-    FROM (
-      SELECT DISTINCT ON (uhid) hospital_status, settlement_status, admission_date, created_at
-      FROM patients
-      ORDER BY uhid, admission_date DESC
-    ) sub
+    FROM patients
   `);
 
   const docStats = await db.query(`
@@ -343,51 +405,92 @@ const getUploadHistory = async (req, res) => {
 const exportPatientsExcel = async (req, res) => {
   const { search, hospital_status, settlement_status } = req.query;
 
-  const searchConditions = [];
-  const searchParams = [];
-  let idx = 1;
+  // Aggregate for "All Patients" and "Active (Admitted)" tabs.
+  // For "Discharged" and "PMJAY" tabs, show all stays so they align with the on-screen table.
+  const shouldAggregate = !hospital_status || hospital_status === 'active';
 
-  if (search) {
-    searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
-    searchParams.push(`%${search}%`);
-    idx++;
-  }
+  let query, queryParams;
 
-  const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
+  if (shouldAggregate) {
+    const searchConditions = [];
+    const searchParams = [];
+    let idx = 1;
 
-  const statusConditions = [];
-  const statusParams = [];
+    if (search) {
+      searchConditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+      searchParams.push(`%${search}%`);
+      idx++;
+    }
 
-  if (hospital_status) {
-    statusConditions.push(`sub.hospital_status = $${idx++}`);
-    statusParams.push(hospital_status);
-  }
-  if (settlement_status) {
-    statusConditions.push(`sub.settlement_status = $${idx++}`);
-    statusParams.push(settlement_status);
-  }
+    const searchWhere = searchConditions.length ? `WHERE ${searchConditions.join(' AND ')}` : '';
 
-  const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
-  const allParams = [...searchParams, ...statusParams];
+    const statusConditions = [];
+    const statusParams = [];
 
-  const query = `
-    SELECT sub.*,
-      (SELECT string_agg(DISTINCT u2.name, ', ') 
-       FROM documents d 
-       JOIN users u2 ON u2.id = d.uploaded_by 
-       WHERE d.patient_id = sub.id AND d.is_deleted = false) as photographers
-    FROM (
-      SELECT DISTINCT ON (p.uhid) p.*,
-        (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
+    if (hospital_status) {
+      statusConditions.push(`sub.hospital_status = $${idx++}`);
+      statusParams.push(hospital_status);
+    }
+    if (settlement_status) {
+      statusConditions.push(`sub.settlement_status = $${idx++}`);
+      statusParams.push(settlement_status);
+    }
+
+    const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
+    queryParams = [...searchParams, ...statusParams];
+
+    query = `
+      SELECT sub.*,
+        (SELECT string_agg(DISTINCT u2.name, ', ') 
+         FROM documents d 
+         JOIN users u2 ON u2.id = d.uploaded_by 
+         WHERE d.patient_id = sub.id AND d.is_deleted = false) as photographers
+      FROM (
+        SELECT DISTINCT ON (p.uhid) p.*,
+          (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
+        FROM patients p
+        ${searchWhere}
+        ORDER BY p.uhid, p.admission_date DESC
+      ) sub
+      ${statusWhere}
+      ORDER BY sub.admission_date DESC
+    `;
+  } else {
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+
+    if (search) {
+      conditions.push(`(p.uhid ILIKE $${idx} OR p.name ILIKE $${idx} OR p.ip_number ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
+    }
+    if (hospital_status) {
+      conditions.push(`p.hospital_status = $${idx++}`);
+      params.push(hospital_status);
+    }
+    if (settlement_status) {
+      conditions.push(`p.settlement_status = $${idx++}`);
+      params.push(settlement_status);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    queryParams = params;
+
+    query = `
+      SELECT p.*,
+        (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count,
+        (SELECT string_agg(DISTINCT u2.name, ', ') 
+         FROM documents d 
+         JOIN users u2 ON u2.id = d.uploaded_by 
+         WHERE d.patient_id = p.id AND d.is_deleted = false) as photographers
       FROM patients p
-      ${searchWhere}
-      ORDER BY p.uhid, p.admission_date DESC
-    ) sub
-    ${statusWhere}
-    ORDER BY sub.admission_date DESC
-  `;
+      ${where}
+      ORDER BY p.admission_date DESC
+    `;
+  }
 
-  const patientsRes = await db.query(query, allParams);
+  const patientsRes = await db.query(query, queryParams);
 
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Patients');
