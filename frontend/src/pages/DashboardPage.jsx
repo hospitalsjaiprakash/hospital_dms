@@ -157,7 +157,7 @@ export default function DashboardPage() {
           <Link to="/documents" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Documents" value={stats?.total_documents} icon={FileText} color="blue" className="h-full" />
           </Link>
-          <Link to="/documents?today=true" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
+          <Link to="/documents?today=true" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full col-span-2 sm:col-span-1">
             <StatCard title="Today's Uploads" value={stats?.uploaded_today} icon={TrendingUp} color="green" trend="Today" className="h-full" />
           </Link>
         </div>
