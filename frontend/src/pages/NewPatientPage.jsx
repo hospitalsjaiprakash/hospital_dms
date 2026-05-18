@@ -7,13 +7,15 @@ import ReactSelect from 'react-select';
 import clsx from 'clsx';
 import { patientApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Button, Input, Card, Select } from '../components/common';
+import { Button, Input, Card, Select, Badge } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
-import { ArrowLeft, User, Hash, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, User, Hash, Calendar, AlertCircle, CheckCircle, Clock, File } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DOC_TYPE_LABELS } from '../components/documents/constants';
+import { format } from 'date-fns';
 
 const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+const STATUS_COLORS = { active: 'green', discharged: 'blue', pending: 'amber', completed: 'green' };
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
@@ -23,7 +25,9 @@ export default function NewPatientPage() {
   const { register, handleSubmit, control, formState: { errors }, setValue } = useForm();
   const [isDetectedReadmission, setIsDetectedReadmission] = useState(false);
   const [matchedPatient, setMatchedPatient] = useState(null);
+  const [admissionHistory, setAdmissionHistory] = useState([]);
   const [isReAdmissionFormVisible, setIsReAdmissionFormVisible] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
 
   const isRestricted = ['pcc', 'nursing'].includes(user?.role);
   const isReadmission = !!searchParams.get('uhid') || isDetectedReadmission;
@@ -31,27 +35,35 @@ export default function NewPatientPage() {
   const handleUhidCheck = async (uhidVal) => {
     const val = uhidVal?.trim().toUpperCase();
     if (val && /^[A-Z0-9]{11}$/.test(val)) {
+      setIsChecking(true);
       try {
         const res = await patientApi.getAll({ search: val, limit: 1 });
         if (res.data.items && res.data.items.length > 0) {
           const exactMatch = res.data.items.find(p => p.uhid.toUpperCase() === val);
           if (exactMatch) {
-            setMatchedPatient(exactMatch);
-            setValue('name', exactMatch.name);
+            // Fetch full patient details with admission history
+            const fullPatient = await patientApi.getOne(exactMatch.id);
+            setMatchedPatient(fullPatient.data);
+            setAdmissionHistory(fullPatient.data.admission_history || []);
+            setValue('name', fullPatient.data.name);
             
-            if (exactMatch.hospital_status === 'active') {
+            if (fullPatient.data.hospital_status === 'active') {
               toast.error(`Patient is already actively admitted!`, { id: 'active-patient-toast' });
             } else {
               toast.success(`Patient record found! Eligible for re-admission.`, { id: 'discharged-patient-toast' });
             }
+            setIsChecking(false);
             return;
           }
         }
       } catch (err) {
         console.error('Error checking UHID:', err);
+        toast.error('Error fetching patient record');
       }
+      setIsChecking(false);
     }
     setMatchedPatient(null);
+    setAdmissionHistory([]);
     setIsDetectedReadmission(false);
     setIsReAdmissionFormVisible(false);
   };
@@ -70,6 +82,7 @@ export default function NewPatientPage() {
 
   const handleReset = () => {
     setMatchedPatient(null);
+    setAdmissionHistory([]);
     setIsDetectedReadmission(false);
     setIsReAdmissionFormVisible(false);
     setValue('uhid', '');
@@ -164,8 +177,8 @@ export default function NewPatientPage() {
               <Input
                 label="UHID" placeholder="JPH20261234" required icon={Hash}
                 error={errors.uhid?.message}
-                readOnly={isReAdmissionFormVisible}
-                className={isReAdmissionFormVisible ? "bg-gray-50 opacity-80 cursor-not-allowed font-semibold" : ""}
+                readOnly={isReAdmissionFormVisible || isChecking}
+                className={isReAdmissionFormVisible || isChecking ? "bg-gray-50 opacity-80 cursor-not-allowed font-semibold" : ""}
                 {...register('uhid', { 
                   required: 'UHID is required', 
                   minLength: { value: 11, message: 'UHID must be 11 chars' },
@@ -179,105 +192,162 @@ export default function NewPatientPage() {
                     handleUhidCheck(val);
                   } else {
                     setMatchedPatient(null);
+                    setAdmissionHistory([]);
                     setIsDetectedReadmission(false);
                     setIsReAdmissionFormVisible(false);
                   }
                 }}
               />
+              {isChecking && <p className="text-xs text-blue-600 mt-1">Checking UHID...</p>}
             </div>
 
             {/* Matched Patient Information Card is shown ONLY when a patient matches */}
             {matchedPatient && (
-              <div className="sm:col-span-2 p-4 rounded-2xl border bg-gray-50/50 space-y-3 animate-slide-up">
-                <div className="flex items-start justify-between">
-                  <div className="flex gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
-                      {matchedPatient.name.charAt(0).toUpperCase()}
+              <div className="sm:col-span-2 space-y-4 animate-slide-up">
+                {/* Patient Info Card */}
+                <div className="p-4 rounded-2xl border bg-gray-50/50 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
+                        {matchedPatient.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-800 text-sm">{matchedPatient.name}</h4>
+                        <p className="text-xs text-gray-500 font-mono">UHID: {matchedPatient.uhid}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-sm">{matchedPatient.name}</h4>
-                      <p className="text-xs text-gray-500 font-mono">UHID: {matchedPatient.uhid}</p>
-                    </div>
+                    <span className={clsx(
+                      "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-sm",
+                      matchedPatient.hospital_status === 'active' 
+                        ? "bg-green-50 text-green-700 border-green-200" 
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    )}>
+                      {matchedPatient.hospital_status === 'active' ? 'Active / Admitted' : 'Discharged'}
+                    </span>
                   </div>
-                  <span className={clsx(
-                    "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-sm",
-                    matchedPatient.hospital_status === 'active' 
-                      ? "bg-green-50 text-green-700 border-green-200" 
-                      : "bg-blue-50 text-blue-700 border-blue-200"
-                  )}>
-                    {matchedPatient.hospital_status === 'active' ? 'Active / Admitted' : 'Discharged'}
-                  </span>
-                </div>
 
-                {matchedPatient.hospital_status === 'active' ? (
-                  <div className="p-3 bg-amber-50 border border-amber-200/60 rounded-xl space-y-2">
-                    <p className="text-xs text-amber-800 font-medium flex items-start gap-1.5">
-                      <AlertCircle size={16} className="flex-shrink-0 text-amber-600 mt-0.5" />
-                      <span>
-                        This patient is currently admitted under IP Number <strong>{matchedPatient.ip_number}</strong>. You cannot create a new admission cycle for a currently active patient.
-                      </span>
-                    </p>
-                    <div className="flex gap-2 pl-5">
-                      <Button 
-                        size="xs" 
-                        onClick={() => navigate(`/patients/${matchedPatient.id}`)}
-                      >
-                        View Patient Profile
-                      </Button>
-                      <button 
-                        type="button"
-                        onClick={handleReset}
-                        className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm"
-                      >
-                        Reset Form
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-blue-50 border border-blue-200/60 rounded-xl space-y-2">
-                    <p className="text-xs text-blue-800 font-medium flex items-start gap-1.5">
-                      <CheckCircle size={16} className="flex-shrink-0 text-blue-600 mt-0.5" />
-                      <span>
-                        {isReAdmissionFormVisible 
-                          ? "Registering a new admission cycle (Re-admission) for this patient. Please fill in the details below."
-                          : "Patient record found! This patient was previously discharged and is eligible for re-admission."
-                        }
-                      </span>
-                    </p>
-                    <div className="flex gap-4 text-xs font-semibold text-blue-700 pl-5">
-                      <span>Previous IP: {matchedPatient.ip_number}</span>
-                      <span>Last Admitted: {matchedPatient.admission_date ? new Date(matchedPatient.admission_date).toLocaleDateString('en-GB') : '—'}</span>
-                    </div>
-                    <div className="flex gap-2 pl-5 pt-1">
-                      {!isReAdmissionFormVisible ? (
-                        <>
-                          <Button 
-                            size="sm" 
-                            type="button"
-                            onClick={() => {
-                              setIsReAdmissionFormVisible(true);
-                              setIsDetectedReadmission(true);
-                            }}
-                          >
-                            Re-admit Patient
-                          </Button>
-                          <button 
-                            type="button"
-                            onClick={handleReset}
-                            className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm"
-                          >
-                            Reset Form
-                          </button>
-                        </>
-                      ) : (
+                  {matchedPatient.hospital_status === 'active' ? (
+                    <div className="p-3 bg-amber-50 border border-amber-200/60 rounded-xl space-y-2">
+                      <p className="text-xs text-amber-800 font-medium flex items-start gap-1.5">
+                        <AlertCircle size={16} className="flex-shrink-0 text-amber-600 mt-0.5" />
+                        <span>
+                          This patient is currently admitted under IP Number <strong>{matchedPatient.ip_number}</strong>. You cannot create a new admission cycle for a currently active patient.
+                        </span>
+                      </p>
+                      <div className="flex gap-2 pl-5">
+                        <Button 
+                          size="xs" 
+                          onClick={() => navigate(`/patients/${matchedPatient.id}`)}
+                        >
+                          View Patient Profile
+                        </Button>
                         <button 
                           type="button"
                           onClick={handleReset}
-                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-sm"
+                          className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm"
                         >
-                          Reset / Enter Different UHID
+                          Reset Form
                         </button>
-                      )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50 border border-blue-200/60 rounded-xl space-y-2">
+                      <p className="text-xs text-blue-800 font-medium flex items-start gap-1.5">
+                        <CheckCircle size={16} className="flex-shrink-0 text-blue-600 mt-0.5" />
+                        <span>
+                          {isReAdmissionFormVisible 
+                            ? "Registering a new admission cycle (Re-admission) for this patient. Please fill in the details below."
+                            : "Patient record found! This patient was previously discharged and is eligible for re-admission."
+                          }
+                        </span>
+                      </p>
+                      <div className="flex gap-4 text-xs font-semibold text-blue-700 pl-5">
+                        <span>Previous IP: {matchedPatient.ip_number}</span>
+                        <span>Last Admitted: {matchedPatient.admission_date ? new Date(matchedPatient.admission_date).toLocaleDateString('en-GB') : '—'}</span>
+                      </div>
+                      <div className="flex gap-2 pl-5 pt-1">
+                        {!isReAdmissionFormVisible ? (
+                          <>
+                            <Button 
+                              size="sm" 
+                              type="button"
+                              onClick={() => {
+                                setIsReAdmissionFormVisible(true);
+                                setIsDetectedReadmission(true);
+                              }}
+                            >
+                              Re-admit Patient
+                            </Button>
+                            <button 
+                              type="button"
+                              onClick={handleReset}
+                              className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm"
+                            >
+                              Reset Form
+                            </button>
+                          </>
+                        ) : (
+                          <button 
+                            type="button"
+                            onClick={handleReset}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-sm"
+                          >
+                            Reset / Enter Different UHID
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Admission History Section */}
+                {admissionHistory.length > 0 && (
+                  <div className="p-4 rounded-xl border bg-blue-50/30 border-blue-100/50 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Clock size={16} className="text-blue-600" />
+                      <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Admission History</h3>
+                      <span className="text-xs text-blue-400 font-medium">({admissionHistory.length} record{admissionHistory.length > 1 ? 's' : ''})</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                      {admissionHistory.map((h) => (
+                        <div 
+                          key={h.id}
+                          className="bg-white border border-blue-100 rounded-lg p-2.5 text-xs hover:shadow-sm transition-all"
+                        >
+                          <div className="flex justify-between items-start mb-1.5">
+                            <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">IP: {h.ip_number}</span>
+                            <div className="flex gap-1">
+                              <Badge variant={STATUS_COLORS[h.hospital_status]} size="xs">{h.hospital_status}</Badge>
+                              {h.hospital_status === 'discharged' && (
+                                <Badge variant={STATUS_COLORS[h.settlement_status]} size="xs">{h.settlement_status}</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-gray-600">
+                              <Calendar size={10} className="text-gray-400" />
+                              <span className="font-medium">Admitted: {format(new Date(h.admission_date), 'dd MMM yyyy')}</span>
+                            </div>
+                            {h.discharge_date && (
+                              <div className="flex items-center gap-1 text-purple-700">
+                                <CheckCircle size={10} className="text-purple-400" />
+                                <span className="font-medium">Discharged: {format(new Date(h.discharge_date), 'dd MMM yyyy')}</span>
+                              </div>
+                            )}
+                            {h.settlement_date && (
+                              <div className="flex items-center gap-1 text-green-700">
+                                <CheckCircle size={10} className="text-green-500" />
+                                <span className="font-medium">PMJAY: {format(new Date(h.settlement_date), 'dd MMM yyyy')}</span>
+                              </div>
+                            )}
+                            <div className="pt-1 mt-1 border-t border-gray-100 flex items-center justify-between text-gray-400">
+                              <div className="flex items-center gap-1">
+                                <File size={9} /> {h.doc_count || 0} docs
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
