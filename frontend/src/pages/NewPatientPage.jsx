@@ -38,38 +38,61 @@ export default function NewPatientPage() {
 
   const isRestricted = ['pcc', 'nursing'].includes(user?.role);
 
-  // Handle UHID lookup in modal
-  const handleModalLookup = async () => {
-    const val = lookupUhid?.trim().toUpperCase();
-    if (!val || !/^[A-Z0-9]{11}$/.test(val)) {
-      toast.error('Please enter a valid UHID (11 characters)');
-      return;
-    }
+  // Handle UHID lookup in modal - Auto-search when 11 chars entered
+  const handleUhidChange = async (value) => {
+    const val = value?.trim().toUpperCase();
+    setLookupUhid(val);
+    
+    // Auto-search when UHID is exactly 11 characters
+    if (val && val.length === 11 && /^[A-Z0-9]{11}$/.test(val)) {
+      setIsChecking(true);
+      try {
+        const res = await patientApi.getAll({ search: val, limit: 10 });
+        const patients = res.data || [];
+        
+        if (patients.length > 0) {
+          const exactMatch = patients.find(p => p.uhid?.toUpperCase() === val);
+          if (exactMatch) {
+            // Fetch full patient details
+            const fullPatient = await patientApi.getOne(exactMatch.id);
+            const patientData = fullPatient.data;
+            const status = patientData.hospital_status;
 
-    setIsChecking(true);
-    try {
-      const res = await patientApi.getAll({ search: val, limit: 1 });
-      if (res.data.items && res.data.items.length > 0) {
-        const exactMatch = res.data.items.find(p => p.uhid.toUpperCase() === val);
-        if (exactMatch) {
-          // Fetch full patient details
-          const fullPatient = await patientApi.getOne(exactMatch.id);
-          setLookupResult({
-            found: true,
-            patient: fullPatient.data,
-            status: fullPatient.data.hospital_status
-          });
-          setIsChecking(false);
-          return;
+            setLookupResult({
+              found: true,
+              patient: patientData,
+              status: status
+            });
+
+            // Auto-populate Name field
+            setLookupName(patientData.name);
+
+            // Trigger corresponding status popups
+            if (status === 'active') {
+              toast.error('Patient is already admitted (Active status). Please discharge first before re-admitting.');
+            } else if (status === 'discharged') {
+              toast.success('Patient is discharged, you can readmit.');
+            }
+
+            setIsChecking(false);
+            return;
+          }
         }
+
+        // Not found - new patient
+        setLookupResult({ found: false, patient: null, status: 'new' });
+      } catch (err) {
+        console.error('Error checking UHID:', err);
+        toast.error('Error fetching patient record');
       }
-      // Not found - new patient
-      setLookupResult({ found: false, patient: null, status: 'new' });
-    } catch (err) {
-      console.error('Error checking UHID:', err);
-      toast.error('Error fetching patient record');
+      setIsChecking(false);
+    } else {
+      // Clear result and matched name if UHID is incomplete or invalid
+      if (lookupResult?.found) {
+        setLookupName('');
+      }
+      setLookupResult(null);
     }
-    setIsChecking(false);
   };
 
   // Handle "Start" button for new patient
@@ -166,157 +189,137 @@ export default function NewPatientPage() {
       {/* ===== LOOKUP MODAL ===== */}
       <Modal open={showLookupModal && !matchedPatient} onClose={handleCloseLookupModal} title="New Patient Registration">
         <div className="space-y-4">
-          {!lookupResult ? (
-            <>
-              {/* Step 1: Enter UHID & Name */}
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600">Enter patient UHID and name to check if they already exist in the system.</p>
-                
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
-                  <input
-                    type="text"
-                    maxLength={11}
-                    placeholder="JPH20261234"
-                    value={lookupUhid}
-                    onChange={(e) => setLookupUhid(e.target.value.toUpperCase())}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-400">Must be exactly 11 characters</p>
+          <p className="text-sm text-gray-600">Enter patient UHID to check their registration status in the system.</p>
+          
+          {/* UHID Field */}
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+            <div className="relative">
+              <input
+                type="text"
+                maxLength={11}
+                placeholder="JPH20261234"
+                value={lookupUhid}
+                onChange={(e) => handleUhidChange(e.target.value.toUpperCase())}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {isChecking && (
+                <div className="absolute right-3 top-3">
+                  <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
                 </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">{lookupUhid.length}/11 characters</p>
+          </div>
 
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Name (Optional for lookup)</label>
-                  <input
-                    type="text"
-                    placeholder="Patient full name"
-                    value={lookupName}
-                    onChange={(e) => setLookupName(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+          {/* Name Field */}
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name</label>
+            <input
+              type="text"
+              placeholder="Patient full name"
+              value={lookupName}
+              onChange={(e) => setLookupName(e.target.value)}
+              readOnly={lookupResult?.found && lookupResult?.status !== 'new'}
+              className={clsx(
+                "w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500",
+                (lookupResult?.found && lookupResult?.status !== 'new') && "bg-gray-50 opacity-80 cursor-not-allowed font-semibold text-gray-600"
+              )}
+            />
+          </div>
 
-                <div className="flex gap-2 pt-2">
-                  <Button variant="secondary" onClick={handleCloseLookupModal} className="flex-1">
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleModalLookup}
-                    loading={isChecking}
-                    className="flex-1 gap-2"
-                  >
-                    <Search size={16} />
-                    Check Patient
-                  </Button>
+          {/* Dynamic Status Alert Card */}
+          {lookupUhid.length === 11 && lookupResult && !isChecking && (
+            <div className="animate-fade-in pt-1">
+              {lookupResult.status === 'active' && (
+                <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-700 flex items-center gap-2">
+                  <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                  <span>Patient is already active in the system. Please discharge before admitting.</span>
                 </div>
-              </div>
-            </>
-          ) : !lookupResult.found ? (
-            <>
-              {/* Step 2a: New Patient - Show "Start" */}
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center space-y-2">
-                  <CheckCircle size={32} className="mx-auto text-blue-600" />
-                  <p className="text-sm font-semibold text-blue-900">UHID not found in system</p>
-                  <p className="text-xs text-blue-700">This is a new patient. Click "Start" to create a new admission record.</p>
+              )}
+              {lookupResult.status === 'discharged' && (
+                <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-xs text-green-700 flex items-center gap-2">
+                  <CheckCircle size={16} className="text-green-500 flex-shrink-0" />
+                  <span>Patient found & discharged. Eligible for re-admission.</span>
                 </div>
-
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => { setLookupResult(null); setLookupUhid(''); }} className="flex-1">
-                    Back
-                  </Button>
-                  <Button onClick={handleStartNewPatient} className="flex-1">
-                    Start
-                  </Button>
+              )}
+              {lookupResult.status === 'new' && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 flex items-center gap-2">
+                  <CheckCircle size={16} className="text-blue-500 flex-shrink-0" />
+                  <span>New patient. Ready to start registration.</span>
                 </div>
-              </div>
-            </>
-          ) : lookupResult.status === 'active' ? (
-            <>
-              {/* Step 2b: Active Patient - Show Warning */}
-              <div className="space-y-4">
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                  <div className="flex gap-3">
-                    <AlertCircle size={24} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-bold text-amber-900">This is an Active Patient</p>
-                      <p className="text-xs text-amber-800 mt-1">
-                        {lookupResult.patient.name} is currently admitted with IP Number <strong>{lookupResult.patient.ip_number}</strong>. 
-                        You must discharge the patient first before creating a new admission.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600 space-y-1">
-                  <p><strong>Patient:</strong> {lookupResult.patient.name}</p>
-                  <p><strong>UHID:</strong> {lookupResult.patient.uhid}</p>
-                  <p><strong>Current IP:</strong> {lookupResult.patient.ip_number}</p>
-                  <p><strong>Admitted:</strong> {format(new Date(lookupResult.patient.admission_date), 'dd MMM yyyy')}</p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => { setLookupResult(null); setLookupUhid(''); }} className="flex-1">
-                    Try Different UHID
-                  </Button>
-                  <Button
-                    onClick={() => navigate(`/patients/${lookupResult.patient.id}`)}
-                    className="flex-1"
-                  >
-                    View Patient Profile
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Step 2c: Discharged Patient - Show "Re-admit" */}
-              <div className="space-y-4">
-                <div className="p-4 bg-green-50 border border-green-200 rounded-xl space-y-3">
-                  <div className="flex gap-3">
-                    <CheckCircle size={24} className="text-green-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-bold text-green-900">Patient Found - Ready for Re-admission</p>
-                      <p className="text-xs text-green-800 mt-1">
-                        {lookupResult.patient.name} was previously discharged and is eligible for re-admission. Click "Re-admit" to proceed.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600 space-y-1">
-                  <p><strong>Patient:</strong> {lookupResult.patient.name}</p>
-                  <p><strong>UHID:</strong> {lookupResult.patient.uhid}</p>
-                  <p><strong>Previous IP:</strong> {lookupResult.patient.ip_number}</p>
-                  <p><strong>Last Admitted:</strong> {format(new Date(lookupResult.patient.admission_date), 'dd MMM yyyy')}</p>
-                  <p><strong>Discharged:</strong> {lookupResult.patient.discharge_date ? format(new Date(lookupResult.patient.discharge_date), 'dd MMM yyyy') : 'N/A'}</p>
-                </div>
-
-                {lookupResult.patient.admission_history && lookupResult.patient.admission_history.length > 0 && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 space-y-2">
-                    <p className="text-xs font-semibold text-blue-900">Previous Admissions: {lookupResult.patient.admission_history.length}</p>
-                    <div className="space-y-1 max-h-24 overflow-y-auto">
-                      {lookupResult.patient.admission_history.map((h) => (
-                        <div key={h.id} className="text-xs text-blue-800 flex justify-between">
-                          <span>IP {h.ip_number}: {format(new Date(h.admission_date), 'dd MMM yyyy')}</span>
-                          <Badge variant={STATUS_COLORS[h.hospital_status]} size="xs">{h.hospital_status}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => { setLookupResult(null); setLookupUhid(''); }} className="flex-1">
-                    Back
-                  </Button>
-                  <Button onClick={handleStartReadmission} className="flex-1">
-                    Re-admit Patient
-                  </Button>
-                </div>
-              </div>
-            </>
+              )}
+            </div>
           )}
+
+          {/* Dynamic Action Buttons */}
+          <div className="flex gap-2 pt-2">
+            <Button variant="secondary" onClick={handleCloseLookupModal} className="flex-1">
+              Cancel
+            </Button>
+
+            {(() => {
+              // 1. Incomplete UHID
+              if (lookupUhid.length < 11) {
+                return (
+                  <Button variant="secondary" disabled className="flex-1 cursor-not-allowed opacity-50">
+                    Enter 11-Digit UHID
+                  </Button>
+                );
+              }
+
+              // 2. Checking state
+              if (isChecking) {
+                return (
+                  <Button variant="secondary" disabled className="flex-1 cursor-not-allowed">
+                    Checking...
+                  </Button>
+                );
+              }
+
+              // 3. Status checks
+              if (lookupResult) {
+                if (lookupResult.status === 'active') {
+                  return (
+                    <Button 
+                      variant="danger" 
+                      disabled
+                      className="flex-1 cursor-not-allowed opacity-50 font-bold"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        toast.error('Patient is already admitted (Active status). Please discharge first before re-admitting.');
+                      }}
+                    >
+                      Admit Blocked (Active)
+                    </Button>
+                  );
+                }
+
+                if (lookupResult.status === 'discharged') {
+                  return (
+                    <Button variant="success" onClick={handleStartReadmission} className="flex-1 font-bold">
+                      Re-admit Patient
+                    </Button>
+                  );
+                }
+
+                if (lookupResult.status === 'new' || !lookupResult.found) {
+                  return (
+                    <Button onClick={handleStartNewPatient} className="flex-1 font-bold">
+                      Start
+                    </Button>
+                  );
+                }
+              }
+
+              // Fallback
+              return (
+                <Button variant="secondary" disabled className="flex-1 cursor-not-allowed">
+                  Search Patient
+                </Button>
+              );
+            })()}
+          </div>
         </div>
       </Modal>
 
