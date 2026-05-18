@@ -4,11 +4,12 @@ import { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQueryClient } from 'react-query';
 import ReactSelect from 'react-select';
+import clsx from 'clsx';
 import { patientApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Button, Input, Card, Select } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
-import { ArrowLeft, User, Hash, Calendar } from 'lucide-react';
+import { ArrowLeft, User, Hash, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DOC_TYPE_LABELS } from '../components/documents/constants';
 
@@ -21,14 +22,46 @@ export default function NewPatientPage() {
   const { user } = useAuth();
   const { register, handleSubmit, control, formState: { errors }, setValue } = useForm();
   const [isDetectedReadmission, setIsDetectedReadmission] = useState(false);
+  const [matchedPatient, setMatchedPatient] = useState(null);
 
   const isRestricted = ['pcc', 'nursing'].includes(user?.role);
   const isReadmission = !!searchParams.get('uhid') || isDetectedReadmission;
 
+  const handleUhidCheck = async (uhidVal) => {
+    const val = uhidVal?.trim().toUpperCase();
+    if (val && /^[A-Z0-9]{11}$/.test(val)) {
+      try {
+        const res = await patientApi.getAll({ search: val, limit: 1 });
+        if (res.data.items && res.data.items.length > 0) {
+          const exactMatch = res.data.items.find(p => p.uhid.toUpperCase() === val);
+          if (exactMatch) {
+            setMatchedPatient(exactMatch);
+            setValue('name', exactMatch.name);
+            setIsDetectedReadmission(exactMatch.hospital_status === 'discharged');
+            
+            if (exactMatch.hospital_status === 'active') {
+              toast.error(`Patient is already actively admitted!`, { id: 'active-patient-toast' });
+            } else {
+              toast.success(`Discharged patient found! Registering re-admission.`, { id: 'discharged-patient-toast' });
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Error checking UHID:', err);
+      }
+    }
+    setMatchedPatient(null);
+    setIsDetectedReadmission(false);
+  };
+
   useEffect(() => {
     const uhid = searchParams.get('uhid');
     const name = searchParams.get('name');
-    if (uhid) setValue('uhid', uhid);
+    if (uhid) {
+      setValue('uhid', uhid);
+      handleUhidCheck(uhid);
+    }
     if (name) setValue('name', name);
   }, [searchParams, setValue]);
 
@@ -39,6 +72,11 @@ export default function NewPatientPage() {
 
   const onSubmit = async (data) => {
     try {
+      if (matchedPatient && matchedPatient.hospital_status === 'active') {
+        toast.error('Cannot admit a patient who is already actively admitted!');
+        return;
+      }
+
       if (docFiles.length > 0 && !data.doc_type) {
         toast.error('Please select a document type for the attached files');
         return;
@@ -78,33 +116,6 @@ export default function NewPatientPage() {
     createPatient(data, { onSuccess: resolve, onError: reject });
   });
 
-  const handleUhidBlur = async (e) => {
-    const val = e.target.value;
-    if (val.length === 11) {
-      try {
-        const res = await patientApi.getAll({ search: val, limit: 1 });
-        if (res.data.items && res.data.items.length > 0) {
-          const lastRecord = res.data.items[0];
-          setValue('name', lastRecord.name);
-          setIsDetectedReadmission(true);
-          toast((t) => (
-            <div className="flex flex-col gap-1">
-              <p className="font-bold text-sm">Patient Found: {lastRecord.name}</p>
-              <p className="text-xs opacity-90">This patient is already in our records. Registering as a <strong>Re-admission</strong>.</p>
-              <div className="flex justify-end mt-1">
-                <button onClick={() => toast.dismiss(t.id)} className="bg-white text-blue-600 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm">OK</button>
-              </div>
-            </div>
-          ), { 
-            duration: 5000, 
-            style: { background: '#3b82f6', color: '#fff', borderRadius: '12px' },
-            icon: '🏥'
-          });
-        }
-      } catch (err) { /* ignore */ }
-    }
-  };
-
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       {/* Header */}
@@ -125,8 +136,8 @@ export default function NewPatientPage() {
               <Input
                 label="Full Name" placeholder="Patient full name" required icon={User}
                 error={errors.name?.message}
-                readOnly={isReadmission && isRestricted}
-                className={isReadmission && isRestricted ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
+                readOnly={!!matchedPatient}
+                className={matchedPatient ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
                 {...register('name', { required: 'Name is required', minLength: { value: 2, message: 'Min 2 characters' } })}
               />
             </div>
@@ -134,30 +145,106 @@ export default function NewPatientPage() {
             <Input
               label="UHID" placeholder="JPH20261234" required icon={Hash}
               error={errors.uhid?.message}
-              readOnly={isReadmission && isRestricted}
-              className={isReadmission && isRestricted ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
+              readOnly={!!matchedPatient}
+              className={matchedPatient ? "bg-gray-50 opacity-80 cursor-not-allowed" : ""}
               {...register('uhid', { 
                 required: 'UHID is required', 
                 minLength: { value: 11, message: 'UHID must be 11 chars' },
                 maxLength: { value: 11, message: 'UHID must be 11 chars' },
-                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID' },
-                onBlur: handleUhidBlur
+                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID' }
               })}
+              onChange={(e) => {
+                const val = e.target.value;
+                register('uhid').onChange(e);
+                if (val.length === 11) {
+                  handleUhidCheck(val);
+                } else {
+                  setMatchedPatient(null);
+                  setIsDetectedReadmission(false);
+                }
+              }}
             />
 
-            {isDetectedReadmission && isRestricted && (
-              <div className="sm:col-span-2 mt-[-10px]">
-                <button 
-                  type="button" 
-                  onClick={() => { 
-                    setIsDetectedReadmission(false); 
-                    setValue('uhid', ''); 
-                    setValue('name', ''); 
-                  }}
-                  className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-bold hover:bg-blue-100 transition-colors"
-                >
-                  Entered wrong UHID? Click here to reset and try again
-                </button>
+            {/* Matched Patient Information Card */}
+            {matchedPatient && (
+              <div className="sm:col-span-2 p-4 rounded-2xl border bg-gray-50/50 space-y-3 animate-slide-up">
+                <div className="flex items-start justify-between">
+                  <div className="flex gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
+                      {matchedPatient.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-800 text-sm">{matchedPatient.name}</h4>
+                      <p className="text-xs text-gray-500 font-mono">UHID: {matchedPatient.uhid}</p>
+                    </div>
+                  </div>
+                  <span className={clsx(
+                    "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-sm",
+                    matchedPatient.hospital_status === 'active' 
+                      ? "bg-green-50 text-green-700 border-green-200" 
+                      : "bg-blue-50 text-blue-700 border-blue-200"
+                  )}>
+                    {matchedPatient.hospital_status === 'active' ? 'Active / Admitted' : 'Discharged'}
+                  </span>
+                </div>
+
+                {matchedPatient.hospital_status === 'active' ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200/60 rounded-xl space-y-2">
+                    <p className="text-xs text-amber-800 font-medium flex items-start gap-1.5">
+                      <AlertCircle size={16} className="flex-shrink-0 text-amber-600 mt-0.5" />
+                      <span>
+                        This patient is currently admitted under IP Number <strong>{matchedPatient.ip_number}</strong>. You cannot create a new admission cycle for a currently active patient.
+                      </span>
+                    </p>
+                    <div className="flex gap-2 pl-5">
+                      <Button 
+                        size="xs" 
+                        onClick={() => navigate(`/patients/${matchedPatient.id}`)}
+                      >
+                        View Patient Profile
+                      </Button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setMatchedPatient(null);
+                          setIsDetectedReadmission(false);
+                          setValue('uhid', '');
+                          setValue('name', '');
+                        }}
+                        className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm"
+                      >
+                        Reset Form
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-blue-50 border border-blue-200/60 rounded-xl space-y-2">
+                    <p className="text-xs text-blue-800 font-medium flex items-start gap-1.5">
+                      <CheckCircle size={16} className="flex-shrink-0 text-blue-600 mt-0.5" />
+                      <span>
+                        Patient record found! You are registering a new admission cycle (<strong>Re-admission</strong>) for this patient.
+                      </span>
+                    </p>
+                    <div className="flex gap-4 text-xs font-semibold text-blue-700 pl-5">
+                      <span>Previous IP: {matchedPatient.ip_number}</span>
+                      <span>Last Admitted: {matchedPatient.admission_date ? new Date(matchedPatient.admission_date).toLocaleDateString('en-GB') : '—'}</span>
+                    </div>
+                    <div className="flex gap-2 pl-5 pt-1">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setMatchedPatient(null);
+                          setIsDetectedReadmission(false);
+                          setValue('uhid', '');
+                          setValue('name', '');
+                        }}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-sm"
+                      >
+                        Reset / Enter Different UHID
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -234,8 +321,13 @@ export default function NewPatientPage() {
 
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
             <Button variant="secondary" type="button" onClick={() => navigate(-1)} disabled={isCreating || isUploading} className="w-full sm:w-auto">Cancel</Button>
-            <Button type="submit" loading={isCreating || isUploading} className="w-full sm:w-auto">
-              {isUploading ? `Uploading ${docFiles.length} file(s)...` : 'Create Patient'}
+            <Button 
+              type="submit" 
+              loading={isCreating || isUploading} 
+              disabled={matchedPatient && matchedPatient.hospital_status === 'active'}
+              className="w-full sm:w-auto"
+            >
+              {isUploading ? `Uploading ${docFiles.length} file(s)...` : (isReadmission ? 'Re-admit Patient' : 'Create Patient')}
             </Button>
           </div>
         </form>

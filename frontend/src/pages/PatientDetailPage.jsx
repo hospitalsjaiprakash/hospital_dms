@@ -13,7 +13,7 @@ import {
   ArrowLeft, Edit2, Upload, Download, FileText, Image,
   Trash2, Eye, Calendar, Hash, User,
   CheckCircle, Clock, Activity, AlertCircle, MoreVertical,
-  File, X, ZoomIn, Check
+  File, X, ZoomIn, Check, Plus
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { format } from 'date-fns';
@@ -60,15 +60,25 @@ function EditPatientModal({ patient, open, onClose }) {
     (data) => patientApi.update(patient.id, data)
   );
 
+  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
+
   const onSubmit = async (data) => {
     try {
       const payload = { ...data };
-      if (payload.discharge_date === '') payload.discharge_date = null;
-      if (payload.settlement_date === '') payload.settlement_date = null;
+      if (isRestricted) {
+        // Prune fields that restricted roles cannot update to prevent backend 403
+        delete payload.hospital_status;
+        delete payload.settlement_status;
+        delete payload.discharge_date;
+        delete payload.settlement_date;
+      } else {
+        if (payload.discharge_date === '') payload.discharge_date = null;
+        if (payload.settlement_date === '') payload.settlement_date = null;
+      }
 
       await mutateAsync(payload);
 
-      if (docFile && watchHospitalStatus === 'discharged') {
+      if (docFile && watchHospitalStatus === 'discharged' && !isRestricted) {
         setIsUploading(true);
         const formData = new FormData();
         formData.append('file', docFile.file);
@@ -90,8 +100,6 @@ function EditPatientModal({ patient, open, onClose }) {
       setIsUploading(false);
     }
   };
-
-  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Patient">
@@ -155,9 +163,9 @@ function EditPatientModal({ patient, open, onClose }) {
                     {...register('discharge_date', {
                       validate: (value) => {
                         if (!value) return true;
-                        const selected = new Date(value);
-                        const admission = patient.admission_date ? new Date(patient.admission_date) : null;
-                        if (admission && selected < admission) {
+                        const selectedMs = new Date(value).getTime();
+                        const admissionMs = patient.admission_date ? new Date(patient.admission_date).getTime() : 0;
+                        if (admissionMs && selectedMs < admissionMs) {
                           return 'Discharge date cannot be before admission';
                         }
                         return true;
@@ -203,7 +211,23 @@ function EditPatientModal({ patient, open, onClose }) {
           </>
         )}
 
-        <div className="flex gap-3 pt-2">
+        {/* Global Validation Errors Indicator */}
+        {Object.keys(errors).length > 0 && (
+          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-start gap-2.5 shadow-sm animate-pulse mt-2">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-semibold block">Please correct the following errors:</span>
+              <ul className="list-disc pl-4 space-y-0.5 font-medium font-sans">
+                {Object.entries(errors).map(([key, err]) => (
+                  <li key={key}>{err.message || `${key} has an error`}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Sticky Mobile-friendly Footer */}
+        <div className="sticky bottom-0 bg-white pt-4 pb-4 px-2 border-t border-gray-100 flex gap-3 z-20 mt-6 shadow-[0_-8px_24px_rgba(255,255,255,0.95)]">
           <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isLoading || isUploading}>Cancel</Button>
           <Button type="submit" loading={isLoading || isUploading} className="flex-1">
             {isUploading ? 'Uploading...' : 'Save Changes'}

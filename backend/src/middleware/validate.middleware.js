@@ -47,10 +47,11 @@ const schemas = {
       'string.length': 'UHID must be exactly 11 characters',
       'string.pattern.base': 'UHID must contain only letters and numbers'
     }),
+    admission_date: Joi.date().optional(),
     hospital_status: Joi.string().valid('active', 'discharged').optional(),
     settlement_status: Joi.string().valid('pending', 'completed').optional(),
-    discharge_date: Joi.date().iso().optional().allow(null),
-    settlement_date: Joi.date().iso().optional().allow(null),
+    discharge_date: Joi.date().optional().allow(null),
+    settlement_date: Joi.date().optional().allow(null),
     ip_number: Joi.string().min(1).max(100).optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
@@ -59,8 +60,8 @@ const schemas = {
     patientIds: Joi.array().items(Joi.string().uuid()).min(1).required(),
     hospital_status: Joi.string().valid('discharged').optional(),
     settlement_status: Joi.string().valid('completed').optional(),
-    discharge_date: Joi.date().iso().optional(),
-    settlement_date: Joi.date().iso().optional(),
+    discharge_date: Joi.date().optional(),
+    settlement_date: Joi.date().optional(),
   }),
 
   uploadDocument: Joi.object({
