@@ -193,8 +193,8 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className={clsx(
-        'relative bg-white w-full rounded-2xl shadow-2xl animate-slide-up overflow-hidden',
-        'max-h-[92vh] flex flex-col',
+        'relative bg-white w-full rounded-2xl shadow-2xl animate-slide-up',
+        'max-h-[92vh] flex flex-col overflow-hidden',
         maxWidth
       )}>
         {title && (
@@ -205,7 +205,10 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
             </button>
           </div>
         )}
-        <div className="p-5 overflow-y-auto flex-1">{children}</div>
+        {/* Children render in a flex column — scroll area + sticky footer work correctly */}
+        <div className="flex flex-col flex-1 min-h-0">
+          {children}
+        </div>
       </div>
     </div>
   );

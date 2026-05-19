@@ -103,136 +103,140 @@ function EditPatientModal({ patient, open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Patient">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              {...register('name', { required: 'Name required' })} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
-          </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              {...register('ip_number', { required: 'IP required' })} />
-            {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
-          </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              {...register('uhid', { 
-                required: 'UHID required',
-                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
-              })} />
-            {errors.uhid && <p className="text-xs text-red-500">{errors.uhid.message}</p>}
-          </div>
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
 
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Admission Date & Time *</label>
-            <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              {...register('admission_date', { required: 'Admission date required' })} />
-            {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
-          </div>
-        </div>
+        {/* ── Scrollable Body ── */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-        <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
-          <textarea 
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
-            {...register('notes')}
-            placeholder="Additional notes..."
-          />
-        </div>
-
-        {!isRestricted && (
-          <>
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
-              <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                {...register('hospital_status')}>
-                <option value="active">Active (Admitted)</option>
-                <option value="discharged">Discharged</option>
-              </select>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                {...register('name', { required: 'Name required' })} />
+              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                {...register('ip_number', { required: 'IP required' })} />
+              {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                {...register('uhid', { 
+                  required: 'UHID required',
+                  pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
+                })} />
+              {errors.uhid && <p className="text-xs text-red-500">{errors.uhid.message}</p>}
             </div>
 
-            {watchHospitalStatus === 'discharged' && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Discharge Date & Time</label>
-                  <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                    {...register('discharge_date', {
-                      validate: (value) => {
-                        if (!value) return true;
-                        const selectedMs = new Date(value).getTime();
-                        const admissionMs = patient.admission_date ? new Date(patient.admission_date).getTime() : 0;
-                        if (admissionMs && selectedMs < admissionMs) {
-                          return 'Discharge date cannot be before admission';
-                        }
-                        return true;
-                      }
-                    })} />
-                  <p className="text-xs text-gray-500 mt-1">Leave blank to use the current date/time automatically.</p>
-                  {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
-                </div>
-                
-                <div className="space-y-1 p-3 bg-gray-50 border border-gray-100 rounded-xl">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Upload Discharge Summary (Optional)</label>
-                  <CameraFileUploader file={docFile} onChange={setDocFile} disabled={isLoading || isUploading} />
-                </div>
-              </div>
-            )}
-
             <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Settlement Status</label>
-              <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                {...register('settlement_status')}>
-                <option value="pending">Pending</option>
-                <option value="completed">Completed</option>
-              </select>
-              {watchHospitalStatus === 'active' && (
-                <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
-                  <AlertCircle size={12} /> Patient must be discharged before completing settlement
-                </p>
-              )}
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Admission Date & Time *</label>
+              <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                {...register('admission_date', { required: 'Admission date required' })} />
+              {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
             </div>
+          </div>
 
-            {/* Settlement Date field when status is completed */}
-            {watchSettlementStatus === 'completed' && (
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
+            <textarea 
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
+              {...register('notes')}
+              placeholder="Additional notes..."
+            />
+          </div>
+
+          {!isRestricted && (
+            <>
+              {/* Hospital Status */}
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  {...register('settlement_date')}
-                />
-                <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
+                <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  {...register('hospital_status')}>
+                  <option value="active">Active (Admitted)</option>
+                  <option value="discharged">Discharged</option>
+                </select>
               </div>
-            )}
-          </>
-        )}
 
-        {/* Global Validation Errors Indicator */}
-        {Object.keys(errors).length > 0 && (
-          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-start gap-2.5 shadow-sm animate-pulse mt-2">
-            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="font-semibold block">Please correct the following errors:</span>
-              <ul className="list-disc pl-4 space-y-0.5 font-medium font-sans">
-                {Object.entries(errors).map(([key, err]) => (
-                  <li key={key}>{err.message || `${key} has an error`}</li>
-                ))}
-              </ul>
+              {/* Discharge fields — only when discharged */}
+              {watchHospitalStatus === 'discharged' && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Discharge Date & Time</label>
+                    <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                      {...register('discharge_date', {
+                        validate: (value) => {
+                          if (!value) return true;
+                          const selectedMs = new Date(value).getTime();
+                          const admissionMs = patient.admission_date ? new Date(patient.admission_date).getTime() : 0;
+                          if (admissionMs && selectedMs < admissionMs) {
+                            return 'Discharge date cannot be before admission';
+                          }
+                          return true;
+                        }
+                      })} />
+                    <p className="text-xs text-gray-500 mt-1">Leave blank to use the current date/time automatically.</p>
+                    {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
+                  </div>
+
+                  {/* Settlement Status — only when discharged */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Settlement Status</label>
+                    <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      {...register('settlement_status')}>
+                      <option value="pending">Pending</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+
+                  {/* PMJAY Settlement Date — only when discharged AND settlement completed */}
+                  {watchSettlementStatus === 'completed' && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        {...register('settlement_date')}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-1 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Upload Discharge Summary (Optional)</label>
+                    <CameraFileUploader file={docFile} onChange={setDocFile} disabled={isLoading || isUploading} />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Global Validation Errors */}
+          {Object.keys(errors).length > 0 && (
+            <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-start gap-2.5 shadow-sm animate-pulse">
+              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-semibold block">Please correct the following errors:</span>
+                <ul className="list-disc pl-4 space-y-0.5 font-medium font-sans">
+                  {Object.entries(errors).map(([key, err]) => (
+                    <li key={key}>{err.message || `${key} has an error`}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Sticky Mobile-friendly Footer */}
-        <div className="sticky bottom-0 bg-white pt-4 pb-4 px-2 border-t border-gray-100 flex gap-3 z-20 mt-6 shadow-[0_-8px_24px_rgba(255,255,255,0.95)]">
+        {/* ── Sticky Footer — always visible at bottom ── */}
+        <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-gray-100 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isLoading || isUploading}>Cancel</Button>
           <Button type="submit" loading={isLoading || isUploading} className="flex-1">
             {isUploading ? 'Uploading...' : 'Save Changes'}
           </Button>
         </div>
+
       </form>
     </Modal>
   );
