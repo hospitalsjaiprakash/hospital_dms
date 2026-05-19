@@ -205,9 +205,11 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
             </button>
           </div>
         )}
-        {/* Children fill full remaining modal height so sticky footer works */}
-        <div className="flex flex-col flex-1 min-h-0 h-full">
-          {children}
+        {/* Default: padded scrollable area. Forms with sticky footers override this by managing their own layout. */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
+          <div className="p-5 flex flex-col flex-1 min-h-0">
+            {children}
+          </div>
         </div>
       </div>
     </div>

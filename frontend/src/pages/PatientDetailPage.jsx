@@ -103,7 +103,7 @@ function EditPatientModal({ patient, open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Patient">
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0 -m-5">
 
         {/* ── Scrollable Body ── */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
