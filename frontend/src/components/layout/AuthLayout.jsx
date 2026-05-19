@@ -64,8 +64,8 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
             transition={{ duration: 0.5, delay: 0.2 }}
             className="relative z-10 text-center w-full"
           >
-            <div className="bg-white/10 backdrop-blur-md rounded-[3rem] p-14 border border-white/20 shadow-2xl">
-              <Brand className="!text-white" showSubtitle={true} logoSize="lg" />
+            <div className="bg-white/10 backdrop-blur-md rounded-[2.5rem] p-8 border border-white/20 shadow-2xl">
+              <Brand className="!text-white" showSubtitle={true} logoSize="md" />
             </div>
           </motion.div>
         </motion.div>

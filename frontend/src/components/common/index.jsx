@@ -234,26 +234,26 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
       </div>
       <div className="space-y-3">
         <div className="flex flex-col items-center">
-          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
+          <h1 className="text-base lg:text-xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
             JAIPRAKASH HOSPITAL
           </h1>
           <div className="flex items-center gap-4 w-full my-2">
             <div className="h-px flex-1 bg-current opacity-20" />
-            <span className="text-base lg:text-xl font-black opacity-60">&</span>
+            <span className="text-sm lg:text-base font-black opacity-60">&</span>
             <div className="h-px flex-1 bg-current opacity-20" />
           </div>
-          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
+          <h1 className="text-base lg:text-xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
             RESEARCH CENTRE
           </h1>
         </div>
 
         {showSubtitle && (
           <div className="flex flex-col items-center gap-2 pt-3">
-            <p className="text-sm lg:text-base font-black uppercase tracking-[0.4em] opacity-95 text-inherit">
+            <p className="text-xs lg:text-sm font-black uppercase tracking-[0.4em] opacity-95 text-inherit">
               ROURKELA
             </p>
             <div className="h-0.5 w-24 bg-white/60 rounded-full" />
-            <p className="text-xs lg:text-sm font-bold uppercase tracking-[0.1em] opacity-90 text-inherit whitespace-nowrap italic">
+            <p className="text-[10px] lg:text-xs font-bold uppercase tracking-[0.1em] opacity-90 text-inherit whitespace-nowrap italic">
               "Quality Healthcare at Affordable Price"
             </p>
           </div>
