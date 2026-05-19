@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Camera, X, Check, ArrowRight, RotateCw,
-  Trash2, ChevronLeft, ChevronRight, FileText, Scan, ZoomIn, GripVertical
+  Trash2, ChevronLeft, ChevronRight, FileText, Scan, ZoomIn, GripVertical,
+  Eye, EyeOff, ArrowLeftRight
 } from 'lucide-react';
 import { Button } from '../common';
 import toast from 'react-hot-toast';
@@ -133,6 +134,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [magnifier, setMagnifier] = useState(null);
   const [activeId, setActiveId] = useState(null); // For drag overlay
   const [livePreviewUrl, setLivePreviewUrl] = useState(null);
+  const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [previewSide, setPreviewSide] = useState('right'); // 'right' | 'left'
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -307,7 +311,11 @@ export default function DocumentScanner({ onComplete, onClose }) {
     };
   }, [currentOriginal]);
 
-  const onMouseDown = (e, idx) => { e.preventDefault(); draggingIdxRef.current = idx; };
+  const onMouseDown = (e, idx) => { 
+    e.preventDefault(); 
+    draggingIdxRef.current = idx; 
+    setIsDraggingHandle(true); 
+  };
   const onMouseMove = useCallback((e) => {
     if (draggingIdxRef.current === null) return;
     const pt = getRelativePoint(e.clientX, e.clientY);
@@ -315,9 +323,17 @@ export default function DocumentScanner({ onComplete, onClose }) {
     setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
     setMagnifier({ x: e.clientX, y: e.clientY, ptX: pt.x, ptY: pt.y });
   }, [getRelativePoint]);
-  const onMouseUp = () => { draggingIdxRef.current = null; setMagnifier(null); };
+  const onMouseUp = () => { 
+    draggingIdxRef.current = null; 
+    setMagnifier(null); 
+    setIsDraggingHandle(false); 
+  };
 
-  const onTouchStart = (e, idx) => { e.preventDefault(); draggingIdxRef.current = idx; };
+  const onTouchStart = (e, idx) => { 
+    e.preventDefault(); 
+    draggingIdxRef.current = idx; 
+    setIsDraggingHandle(true); 
+  };
   const onTouchMove = useCallback((e) => {
     if (draggingIdxRef.current === null) return;
     const t = e.touches[0];
@@ -326,7 +342,11 @@ export default function DocumentScanner({ onComplete, onClose }) {
     setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
     setMagnifier({ x: t.clientX, y: t.clientY, ptX: pt.x, ptY: pt.y });
   }, [getRelativePoint]);
-  const onTouchEnd = () => { draggingIdxRef.current = null; setMagnifier(null); };
+  const onTouchEnd = () => { 
+    draggingIdxRef.current = null; 
+    setMagnifier(null); 
+    setIsDraggingHandle(false); 
+  };
 
   // ── Crop complete ───────────────────────────────────────────────────────────
   const handleCropComplete = async () => {
@@ -684,12 +704,67 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
         {/* Live Perspective Preview Floating Window */}
         {livePreviewUrl && (
-          <div className="absolute top-16 right-4 w-28 aspect-[3/4] bg-gray-800 rounded-lg border-2 border-blue-500 shadow-2xl overflow-hidden pointer-events-none z-40">
-             <img src={livePreviewUrl} className="w-full h-full object-cover" alt="live preview" />
-             <div className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-[8px] text-white font-bold text-center py-0.5">
-               PREVIEW
-             </div>
-          </div>
+          showPreview ? (
+            <div 
+              className={clsx(
+                "absolute top-16 w-28 aspect-[3/4] bg-gray-800 rounded-lg border-2 border-blue-500 shadow-2xl overflow-hidden z-40 transition-all duration-300 flex flex-col select-none",
+                previewSide === 'right' ? 'right-4' : 'left-4',
+                isDraggingHandle ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100'
+              )}
+            >
+              {/* Image Container with click to swap side */}
+              <div 
+                className="flex-1 relative min-h-0 cursor-pointer"
+                onClick={() => setPreviewSide(prev => prev === 'right' ? 'left' : 'right')}
+                title="Click to flip position"
+              >
+                <img src={livePreviewUrl} className="w-full h-full object-cover pointer-events-none" alt="live preview" />
+                
+                {/* Control Overlay Buttons */}
+                <div className="absolute top-1.5 left-1.5 right-1.5 flex justify-between items-center z-50">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); // prevent swapping side
+                      setPreviewSide(prev => prev === 'right' ? 'left' : 'right');
+                    }}
+                    className="p-1 bg-black/70 hover:bg-blue-600 rounded text-white transition-colors shadow-md flex items-center justify-center pointer-events-auto"
+                    title="Move Side"
+                  >
+                    <ArrowLeftRight size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); // prevent swapping side
+                      setShowPreview(false);
+                    }}
+                    className="p-1 bg-black/70 hover:bg-red-600 rounded text-white transition-colors shadow-md flex items-center justify-center pointer-events-auto"
+                    title="Hide Preview"
+                  >
+                    <EyeOff size={10} />
+                  </button>
+                </div>
+              </div>
+              <div className="bg-blue-500 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none">
+                PREVIEW
+              </div>
+            </div>
+          ) : (
+            // Small floating restored button when minimized
+            <button
+              type="button"
+              onClick={() => setShowPreview(true)}
+              className={clsx(
+                "absolute top-16 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg z-40 transition-all duration-300 flex items-center justify-center border border-white/20",
+                previewSide === 'right' ? 'right-4' : 'left-4',
+                isDraggingHandle ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100'
+              )}
+              title="Show Preview"
+            >
+              <Eye size={16} />
+            </button>
+          )
         )}
       </div>
     );
