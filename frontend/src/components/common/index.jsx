@@ -205,8 +205,8 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
             </button>
           </div>
         )}
-        {/* Children render in a flex column — scroll area + sticky footer work correctly */}
-        <div className="flex flex-col flex-1 min-h-0">
+        {/* Children fill full remaining modal height so sticky footer works */}
+        <div className="flex flex-col flex-1 min-h-0 h-full">
           {children}
         </div>
       </div>

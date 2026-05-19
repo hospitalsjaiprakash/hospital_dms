@@ -543,7 +543,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
               <FilePdf className="w-8 h-8 text-red-500" />
             </div>
           )}
-          <p className="text-sm font-semibold text-gray-800 pt-2">{f.file.name}</p>
+          <p className="text-sm font-semibold text-gray-800 pt-2 max-w-full truncate px-1" title={f.file.name}>{f.file.name}</p>
           <p className="text-xs text-gray-500">{formatBytes(f.file.size)}</p>
           <div className="flex items-center justify-center gap-1 text-green-600 font-medium">
             <CheckCircle size={14} /><span className="text-xs">Ready to upload</span>
