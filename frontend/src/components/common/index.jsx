@@ -232,7 +232,7 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
       </div>
       <div className="space-y-3">
         <div className="flex flex-col items-center">
-          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.15em] text-inherit drop-shadow-sm">
+          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
             JAIPRAKASH HOSPITAL
           </h1>
           <div className="flex items-center gap-4 w-full my-2">
@@ -240,7 +240,7 @@ export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
             <span className="text-base lg:text-xl font-black opacity-60">&</span>
             <div className="h-px flex-1 bg-current opacity-20" />
           </div>
-          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.15em] text-inherit drop-shadow-sm">
+          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.05em] text-inherit drop-shadow-sm whitespace-nowrap">
             RESEARCH CENTRE
           </h1>
         </div>
