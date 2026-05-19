@@ -277,7 +277,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const rawFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
       setCompressing(true);
-      const compressed = await imageCompression(rawFile, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
+      const compressed = await imageCompression(rawFile, { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true });
       const newEntry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
 
       setStagedPhoto(newEntry);
@@ -298,10 +298,16 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   };
 
   const processAndSetFile = async (f) => {
+    // Check if total count will exceed 5
+    if (!(isLegacySingle || single) && files.length >= 5) {
+      toast.error('Maximum 5 files allowed in total');
+      return;
+    }
+
     if (f.type.startsWith('image/')) {
       setCompressing(true);
       try {
-        const compressed = await imageCompression(f, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
+        const compressed = await imageCompression(f, { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true });
         const entry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
         if (isLegacySingle || single) {
           handleChange([entry]);
@@ -311,7 +317,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       } catch { toast.error('Compression failed'); }
       finally { setCompressing(false); }
     } else if (f.type === 'application/pdf') {
-      if (f.size > 1 * 1024 * 1024) { toast.error('PDF must be under 1MB'); return; }
+      if (f.size > 1.5 * 1024 * 1024) { 
+        toast.error(`PDF is ${(f.size / 1024 / 1024).toFixed(2)}MB. Each PDF must be under 1.5MB.`); 
+        return; 
+      }
       const entry = { file: f, preview: null, type: 'pdf' };
       if (isLegacySingle || single) {
         handleChange([entry]);
@@ -324,13 +333,22 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   };
 
   const onDrop = useCallback(async (acceptedFiles) => {
-    for (const f of acceptedFiles) await processAndSetFile(f);
-  }, [files]);
+    const spaceLeft = (isLegacySingle || single) ? 1 - files.length : 5 - files.length;
+    if (spaceLeft <= 0) {
+      toast.error('Maximum 5 files allowed in total');
+      return;
+    }
+    const filesToProcess = acceptedFiles.slice(0, spaceLeft);
+    if (acceptedFiles.length > spaceLeft) {
+      toast.error('Only the first 5 files will be processed');
+    }
+    for (const f of filesToProcess) await processAndSetFile(f);
+  }, [files, isLegacySingle, single]);
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { 'image/jpeg': [], 'image/png': [], 'image/*': [], 'application/pdf': [] },
-    maxFiles: (isLegacySingle || single) ? 1 : 10,
+    maxFiles: (isLegacySingle || single) ? 1 : 5,
     disabled: disabled || compressing || mode === 'camera',
     noClick: true, // Trigger manually via dedicated button
   });

@@ -365,11 +365,19 @@ export default function DocumentScanner({ onComplete, onClose }) {
       const tl = points[0], tr = points[1], br = points[2], bl = points[3];
       const widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
       const widthBottom = Math.hypot(br.x - bl.x, br.y - bl.y);
-      const targetW = Math.max(widthTop, widthBottom);
+      let targetW = Math.max(widthTop, widthBottom);
       
       const heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
       const heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
-      const targetH = Math.max(heightLeft, heightRight);
+      let targetH = Math.max(heightLeft, heightRight);
+
+      // Downscale high-resolution canvases to a max of 1600px to ensure the final merged PDF stays under 1.5MB
+      const maxDim = 1600;
+      if (targetW > maxDim || targetH > maxDim) {
+        const scale = maxDim / Math.max(targetW, targetH);
+        targetW = Math.round(targetW * scale);
+        targetH = Math.round(targetH * scale);
+      }
 
       // Use OpenCV if available, else fallback to standard canvas scaling
       let dstCanvas;
@@ -397,7 +405,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
         toast.success(`Page ${pages.length + 1} scanned! ✅`);
         setStep('review');
         setIsProcessing(false);
-      }, 'image/jpeg', 0.88);
+      }, 'image/jpeg', 0.75);
     } catch (err) {
       console.error(err);
       toast.error('Processing failed');
@@ -467,25 +475,81 @@ export default function DocumentScanner({ onComplete, onClose }) {
     try {
       const { jsPDF } = window.jspdf;
       if (!jsPDF) throw new Error('jsPDF not loaded');
-      const doc = new jsPDF();
 
-      for (let i = 0; i < pages.length; i++) {
+      // Helper function to compress cropped page canvas to a specific quality and max size
+      const compressPageImage = async (pagePreviewUrl, targetQuality, maxDimension) => {
         const img = new Image();
-        img.src = pages[i].preview;
+        img.src = pagePreviewUrl;
         await new Promise(r => { img.onload = r; });
+        
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        
+        if (w > maxDimension || h > maxDimension) {
+          const scale = maxDimension / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        
+        return new Promise(resolve => {
+          canvas.toBlob(resolve, 'image/jpeg', targetQuality);
+        });
+      };
 
-        const pw = doc.internal.pageSize.getWidth();
-        const ph = doc.internal.pageSize.getHeight();
-        const ratio = img.width / img.height;
-        let fw, fh;
-        if (ratio > pw / ph) { fw = pw; fh = pw / ratio; }
-        else { fh = ph; fw = ph * ratio; }
+      // Quality scale levels to step down until the PDF fits under 1.5MB
+      const qualityLevels = [
+        { qual: 0.85, dim: 1600 }, // High quality
+        { qual: 0.70, dim: 1200 }, // Medium quality
+        { qual: 0.55, dim: 1000 }, // Low quality
+        { qual: 0.40, dim: 800 }   // Super compressed (very readable for documents)
+      ];
 
-        if (i > 0) doc.addPage();
-        doc.addImage(img, 'JPEG', (pw - fw) / 2, (ph - fh) / 2, fw, fh);
+      let pdfBlob = null;
+      const targetMax = 1.5 * 1024 * 1024; // 1.5MB
+
+      for (let levelIndex = 0; levelIndex < qualityLevels.length; levelIndex++) {
+        const { qual, dim } = qualityLevels[levelIndex];
+        const doc = new jsPDF();
+        
+        console.log(`Generating PDF attempt ${levelIndex + 1} with quality ${qual} and maxDim ${dim}...`);
+
+        for (let i = 0; i < pages.length; i++) {
+          // Re-compress image dynamically for this attempt
+          const compressedBlob = await compressPageImage(pages[i].preview, qual, dim);
+          const compressedUrl = URL.createObjectURL(compressedBlob);
+
+          const img = new Image();
+          img.src = compressedUrl;
+          await new Promise(r => { img.onload = r; });
+
+          const pw = doc.internal.pageSize.getWidth();
+          const ph = doc.internal.pageSize.getHeight();
+          const ratio = img.width / img.height;
+          let fw, fh;
+          if (ratio > pw / ph) { fw = pw; fh = pw / ratio; }
+          else { fh = ph; fw = ph * ratio; }
+
+          if (i > 0) doc.addPage();
+          doc.addImage(img, 'JPEG', (pw - fw) / 2, (ph - fh) / 2, fw, fh);
+          
+          URL.revokeObjectURL(compressedUrl);
+        }
+
+        pdfBlob = doc.output('blob');
+        console.log(`Generated PDF Size: ${(pdfBlob.size / 1024 / 1024).toFixed(2)} MB`);
+
+        if (pdfBlob.size <= targetMax || levelIndex === qualityLevels.length - 1) {
+          // If it fits, or if this is the maximum possible compression we can do, stop the loop
+          break;
+        }
       }
 
-      const pdfBlob = doc.output('blob');
       const pdfFile = new File([pdfBlob], `scan_${Date.now()}.pdf`, { type: 'application/pdf' });
       onComplete(pdfFile);
       onClose();
