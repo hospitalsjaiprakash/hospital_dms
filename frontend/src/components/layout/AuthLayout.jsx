@@ -62,10 +62,10 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
             animate={{ opacity: 1, scale: 1 }}
             key={reverse ? 'signup-brand' : 'login-brand'}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="relative z-10 text-center"
+            className="relative z-10 text-center w-full"
           >
-            <div className="bg-white/10 backdrop-blur-md rounded-[3rem] p-8 border border-white/20 shadow-2xl">
-              <Brand className="!text-white" showSubtitle={true} />
+            <div className="bg-white/10 backdrop-blur-md rounded-[3rem] p-14 border border-white/20 shadow-2xl">
+              <Brand className="!text-white" showSubtitle={true} logoSize="lg" />
             </div>
           </motion.div>
         </motion.div>

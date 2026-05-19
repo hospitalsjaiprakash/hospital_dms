@@ -217,41 +217,41 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
 // ── Brand ─────────────────────────────────────────────────────────────────────
 export function Brand({ className, showSubtitle = true, logoSize = 'md' }) {
   const logoSizes = {
-    sm: 'w-10 h-10',
-    md: 'w-24 h-24',
-    lg: 'w-32 h-32',
+    sm: 'w-14 h-14',
+    md: 'w-28 h-28',
+    lg: 'w-40 h-40',
   };
 
   return (
     <div className={clsx('flex flex-col items-center text-center group cursor-default select-none', className)}>
       <div className={clsx(
-        'bg-white rounded-full flex items-center justify-center mb-6 shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden transition-all duration-500 group-hover:scale-105 group-hover:rotate-3 ring-8 ring-white/30',
+        'bg-white rounded-full flex items-center justify-center mb-8 shadow-[0_20px_50px_rgba(0,0,0,0.25)] overflow-hidden transition-all duration-500 group-hover:scale-105 group-hover:rotate-3 ring-8 ring-white/30',
         logoSizes[logoSize]
       )}>
         <img src={logo} alt="Hospital Logo" className="w-full h-full object-cover rounded-full p-0.5" />
       </div>
       <div className="space-y-3">
         <div className="flex flex-col items-center">
-          <h1 className="text-sm lg:text-base font-black leading-none uppercase tracking-[0.2em] text-inherit">
+          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.15em] text-inherit drop-shadow-sm">
             JAIPRAKASH HOSPITAL
           </h1>
-          <div className="flex items-center gap-4 w-full my-1">
-            <div className="h-px flex-1 bg-current opacity-10" />
-            <span className="text-xs lg:text-sm font-black opacity-60">&</span>
-            <div className="h-px flex-1 bg-current opacity-10" />
+          <div className="flex items-center gap-4 w-full my-2">
+            <div className="h-px flex-1 bg-current opacity-20" />
+            <span className="text-base lg:text-xl font-black opacity-60">&</span>
+            <div className="h-px flex-1 bg-current opacity-20" />
           </div>
-          <h1 className="text-sm lg:text-base font-black leading-none uppercase tracking-[0.2em] text-inherit">
+          <h1 className="text-xl lg:text-3xl font-black leading-tight uppercase tracking-[0.15em] text-inherit drop-shadow-sm">
             RESEARCH CENTRE
           </h1>
         </div>
 
         {showSubtitle && (
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-90 text-inherit">
+          <div className="flex flex-col items-center gap-2 pt-3">
+            <p className="text-sm lg:text-base font-black uppercase tracking-[0.4em] opacity-95 text-inherit">
               ROURKELA
             </p>
-            <div className="h-0.5 w-16 bg-blue-500 rounded-full" />
-            <p className="text-[9px] font-bold uppercase tracking-[0.15em] opacity-100 text-inherit whitespace-nowrap italic">
+            <div className="h-0.5 w-24 bg-white/60 rounded-full" />
+            <p className="text-xs lg:text-sm font-bold uppercase tracking-[0.1em] opacity-90 text-inherit whitespace-nowrap italic">
               "Quality Healthcare at Affordable Price"
             </p>
           </div>
