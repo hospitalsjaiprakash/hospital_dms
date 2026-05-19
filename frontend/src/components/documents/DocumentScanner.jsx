@@ -522,7 +522,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
       </div>
 
-      <div className="h-32 bg-black flex items-center justify-around px-6 border-t border-white/10">
+      <div 
+        className="bg-black flex items-center justify-around px-6 border-t border-white/10"
+        style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1.5rem', height: 'auto', minHeight: '8rem' }}
+      >
         <button
           onClick={onClose}
           className="text-white/70 text-sm font-bold px-3 py-2 rounded-xl hover:bg-white/10 transition-colors"
@@ -570,7 +573,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
     return (
       <div className="h-full flex flex-col bg-gray-950">
-        <div className="flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-white/10">
+        <div 
+          className="flex items-center justify-between px-5 pb-3 bg-gray-900 border-b border-white/10 flex-shrink-0"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
+        >
           <span className="text-white font-bold text-sm">✂️ Adjust Crop</span>
           <span className="text-xs text-gray-400">Drag corners to select document area</span>
         </div>
@@ -687,7 +693,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         </div>
 
-        <div className="h-24 bg-gray-900 border-t border-white/10 flex items-center justify-between px-6">
+        <div 
+          className="bg-gray-900 border-t border-white/10 flex items-center justify-between px-6 flex-shrink-0"
+          style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1rem', height: 'auto', minHeight: '6rem' }}
+        >
 
           <div className="flex w-full items-center justify-between">
             <button
@@ -800,7 +809,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
   const renderReview = () => (
     <div className="h-full flex flex-col bg-gray-50">
-      <div className="px-5 py-4 bg-white border-b flex items-center justify-between shadow-sm">
+      <div 
+        className="px-5 pb-4 bg-white border-b flex items-center justify-between shadow-sm flex-shrink-0"
+        style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+      >
         <h2 className="font-bold text-gray-800 flex items-center gap-2">
           <FileText className="text-blue-600" size={18} />
           Scanned Pages
@@ -862,7 +874,10 @@ export default function DocumentScanner({ onComplete, onClose }) {
         </button>
       </div>
 
-      <div className="p-5 bg-white border-t space-y-3">
+      <div 
+        className="p-5 bg-white border-t space-y-3 flex-shrink-0"
+        style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <Button
           onClick={finishScan}
           loading={isProcessing}

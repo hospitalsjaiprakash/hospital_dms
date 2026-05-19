@@ -447,10 +447,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           )}
 
           {/* Status Indicators */}
-          <div className="absolute top-4 left-4 flex flex-col gap-2">
+          <div className="absolute left-4 flex flex-col gap-2" style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}>
             {(capturing || compressing) && (
               <div className="bg-blue-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-2 shadow-xl animate-pulse">
-                <div className="w-2 h-2 bg-white rounded-full animate-ping" />
+                <div className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
                 {compressing ? 'TAGGING & SAVING...' : 'CAPTURING...'}
               </div>
             )}
@@ -464,14 +464,18 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           {/* Close Button */}
           <button 
             type="button" onClick={stopCamera}
-            className="absolute top-4 right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
+            className="absolute right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
+            style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Shutter Controls */}
-        <div className="h-32 bg-black flex items-center justify-around px-8 border-t border-white/5">
+        <div 
+          className="bg-black flex items-center justify-around px-8 border-t border-white/5"
+          style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1.5rem', height: 'auto', minHeight: '8rem' }}
+        >
           {/* Done/Cancel Button */}
           <button 
             type="button" onClick={stopCamera} disabled={capturing || compressing}

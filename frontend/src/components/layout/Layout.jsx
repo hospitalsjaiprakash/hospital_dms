@@ -39,7 +39,10 @@ export default function Layout() {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-6 border-b border-blue-700">
+      <div 
+        className="flex items-center gap-3 px-4 pb-6 border-b border-blue-700"
+        style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}
+      >
         <img src={logo} alt="Logo" className="w-12 h-12 rounded-full object-contain flex-shrink-0 border-2 border-blue-400/30 p-0.5" />
         <div className="min-w-0">
           <h1 className="text-white font-black text-xl leading-none uppercase tracking-tighter whitespace-nowrap">
@@ -113,7 +116,8 @@ export default function Layout() {
           <aside className="relative w-64 max-w-[80vw] bg-blue-800 flex flex-col z-10 shadow-2xl">
             <button
               onClick={() => setSidebarOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-md text-blue-200 hover:text-white hover:bg-blue-700"
+              className="absolute right-4 p-1.5 rounded-md text-blue-200 hover:text-white hover:bg-blue-700"
+              style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
             >
               <X size={18} />
             </button>
@@ -125,7 +129,10 @@ export default function Layout() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar (mobile/tablet) */}
-        <header className="lg:hidden flex items-center justify-between gap-3 px-4 py-3 bg-white border-b border-gray-200 flex-shrink-0 shadow-sm">
+        <header 
+          className="lg:hidden flex items-center justify-between gap-3 px-4 pb-3 bg-white border-b border-gray-200 flex-shrink-0 shadow-sm"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -157,15 +164,21 @@ export default function Layout() {
           </div>
         </header>
 
-{/* Page Content */}
-        <main className="flex-1 overflow-y-auto pb-20 lg:pb-0 bg-gray-50">
+        {/* Page Content */}
+        <main 
+          className="flex-1 overflow-y-auto bg-gray-50"
+          style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 animate-fade-in">
             <Outlet />
           </div>
         </main>
 
         {/* Bottom Nav Bar (mobile/tablet only) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex">
+        <nav 
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] flex"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
           {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
