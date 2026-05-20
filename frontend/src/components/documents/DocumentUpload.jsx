@@ -19,7 +19,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
   const [uploadProgress, setUploadProgress] = useState(null);
   
   const { register, handleSubmit, control, formState: { errors }, reset, watch } = useForm({
-    defaultValues: { doc_type: '', notes: '' }
+    defaultValues: { doc_type: '', specify_reason: '', notes: '' }
   });
 
   const docType = watch('doc_type');
@@ -66,7 +66,9 @@ export default function DocumentUpload({ patientId, open, onClose }) {
         formData.append('file', fileItem.file, fileName);
         formData.append('patient_id', patientId);
         formData.append('doc_type', docType);
-        if (notes) formData.append('notes', notes);
+        const specifyReason = watch('specify_reason');
+        const effectiveNotes = notes || (docType === 'other' && specifyReason ? specifyReason : '');
+        if (effectiveNotes) formData.append('notes', effectiveNotes);
         
         await documentApi.upload(formData);
         successCount++;
@@ -140,13 +142,27 @@ export default function DocumentUpload({ patientId, open, onClose }) {
                     placeholder="Enter document reason or type..."
                     className={clsx(
                       "w-full rounded-lg border px-3 py-2 min-h-[42px] text-sm focus:ring-2 focus:border-transparent outline-none transition-colors",
-                      errors.notes ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                      errors.specify_reason ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
                     )}
-                    {...register('notes', { required: 'Please specify the document type or reason' })}
+                    {...register('specify_reason', { required: 'Please specify the document type or reason' })}
                   />
-                  {errors.notes && <p className="text-xs text-red-500 mt-1">{errors.notes.message}</p>}
+                  {errors.specify_reason && <p className="text-xs text-red-500 mt-1">{errors.specify_reason.message}</p>}
                 </div>
               )}
+            </div>
+
+            {/* Notes Field */}
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes <span className="text-gray-400 font-normal normal-case">(Optional)</span></label>
+              <textarea
+                rows={3}
+                placeholder="Add any relevant notes or remarks about this document..."
+                className={clsx(
+                  "w-full rounded-lg border px-3 py-2 text-sm focus:ring-2 focus:border-transparent outline-none transition-colors resize-none",
+                  errors.notes ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                )}
+                {...register('notes')}
+              />
             </div>
 
             {files.length > 0 && (
