@@ -503,7 +503,6 @@ const exportPatientsExcel = async (req, res) => {
     { header: 'Status', key: 'status', width: 15 },
     { header: 'Discharge Date', key: 'discharge', width: 15 },
     { header: 'Documents Count', key: 'docCount', width: 15 },
-    { header: 'Uploaded By', key: 'uploadedBy', width: 30 },
     { header: 'PMJAY Status', key: 'pmjay', width: 25 }
   ];
 
@@ -525,7 +524,6 @@ const exportPatientsExcel = async (req, res) => {
       status: p.hospital_status === 'active' ? 'Active' : 'Discharged',
       discharge: p.hospital_status === 'discharged' ? dischargeStr : '-',
       docCount: p.document_count || 0,
-      uploadedBy: p.photographers || '-',
       pmjay: pmjayStatus
     });
   });
