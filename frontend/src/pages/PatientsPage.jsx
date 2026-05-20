@@ -98,12 +98,12 @@ export default function PatientsPage() {
   const showDischargeCol = activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled';
   const showSettlementCol = activeTab === 'settled';
 
-  // Dynamic grid: 13 cols for all/active, 14 for discharged/pending, 16 for settled
+  // Dynamic grid: 14 cols for all/active, 15 for discharged/pending, 17 for settled
   const gridStyle = showSettlementCol
-    ? 'repeat(16, minmax(0, 1fr))'
+    ? 'repeat(17, minmax(0, 1fr))'
     : showDischargeCol
-      ? 'repeat(14, minmax(0, 1fr))'
-      : 'repeat(13, minmax(0, 1fr))';
+      ? 'repeat(15, minmax(0, 1fr))'
+      : 'repeat(14, minmax(0, 1fr))';
 
   const patientColSpan = showDischargeCol ? 'col-span-3' : 'col-span-4';
   const statusColSpan = 'col-span-2'; // always 2 — enough room for both badges
@@ -290,7 +290,7 @@ export default function PatientsPage() {
                 Patient
               </div>
               <div className="col-span-1">IP No</div>
-              <div className="col-span-2">UHID</div>
+              <div className="col-span-3">UHID</div>
               <div className="col-span-2">Admitted</div>
               {showDischargeCol && <div className="col-span-2">Discharged</div>}
               {showSettlementCol && <div className="col-span-2">PMJAY Settled</div>}
@@ -345,7 +345,7 @@ export default function PatientsPage() {
                   </div>
 
                   {/* UHID */}
-                  <div className="hidden sm:flex sm:col-span-2 items-center">
+                  <div className="hidden sm:flex sm:col-span-3 items-center">
                     <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-md">{patient.uhid}</span>
                   </div>
 
