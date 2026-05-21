@@ -659,22 +659,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
               {autoDetected ? 'Document found — drag corners to refine' : 'Drag corners to select document area'}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCropOverlay(prev => !prev)}
-              title={showCropOverlay ? 'Hide crop rectangle' : 'Show crop rectangle'}
-              className={clsx(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all",
-                showCropOverlay
-                  ? "bg-blue-600 border-blue-400 text-white shadow-[0_0_8px_rgba(59,130,246,0.5)]"
-                  : "bg-gray-800 border-white/20 text-gray-400 hover:bg-gray-700 hover:text-white"
-              )}
-            >
-              {showCropOverlay ? <Eye size={13} /> : <EyeOff size={13} />}
-              <span>{showCropOverlay ? 'ON' : 'OFF'}</span>
-            </button>
-          </div>
+          <div className="w-8" />
         </div>
 
         {magnifier && cropContainerRef.current && (
@@ -702,6 +687,21 @@ export default function DocumentScanner({ onComplete, onClose }) {
         )}
 
         <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-4">
+          {/* Floating eye toggle button */}
+          <button
+            type="button"
+            onClick={() => setShowCropOverlay(prev => !prev)}
+            title={showCropOverlay ? 'Hide crop rectangle' : 'Show crop rectangle'}
+            className={clsx(
+              "absolute right-4 top-4 z-30 w-10 h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all duration-200",
+              showCropOverlay
+                ? "bg-blue-600 border-blue-400 text-white shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+                : "bg-gray-800/80 border-white/30 text-gray-300 hover:bg-gray-700 hover:text-white"
+            )}
+          >
+            {showCropOverlay ? <Eye size={18} /> : <EyeOff size={18} />}
+          </button>
+
           <div
             ref={cropContainerRef}
             className="relative select-none"
