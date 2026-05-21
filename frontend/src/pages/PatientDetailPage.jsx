@@ -32,6 +32,115 @@ const STATUS_COLORS = {
   pending: 'amber', completed: 'green',
 };
 
+// ── Readmit Modal ────────────────────────────────────────────────────────────
+function ReadmitModal({ patient, open, onClose }) {
+  const navigate = useNavigate();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm({
+    defaultValues: {
+      ip_number: '',
+      admission_date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+      notes: '',
+    }
+  });
+
+  const onSubmit = async (data) => {
+    try {
+      const result = await patientApi.create({
+        uhid: patient.uhid,
+        name: patient.name,
+        ip_number: data.ip_number.trim(),
+        admission_date: data.admission_date,
+        notes: data.notes || '',
+      });
+      toast.success(`Patient re-admitted successfully! IP: ${data.ip_number}`);
+      onClose();
+      reset();
+      // Navigate to the new admission's profile
+      navigate(`/patients/${result.data.id}`);
+    } catch (err) {
+      toast.error(err.message || 'Re-admission failed');
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Re-Admit Patient">
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0 -m-5">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+          {/* Info Banner */}
+          <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+            <Activity size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-blue-800">Re-Admitting Patient</p>
+              <p className="text-xs text-blue-600 mt-0.5">This will create a new admission record for the same patient. Previous records are preserved.</p>
+            </div>
+          </div>
+
+          {/* Read-only patient info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Patient Name</label>
+              <input
+                readOnly
+                value={patient.name}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID</label>
+              <input
+                readOnly
+                value={patient.uhid}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed font-mono outline-none"
+              />
+            </div>
+          </div>
+
+          {/* New IP Number */}
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">New IP Number *</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter new IP number for this admission"
+              {...register('ip_number', { required: 'New IP Number is required' })}
+            />
+            {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
+          </div>
+
+          {/* Re-admission Date */}
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Re-Admission Date & Time *</label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              {...register('admission_date', { required: 'Admission date is required' })}
+            />
+            {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes (Optional)</label>
+            <textarea
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
+              placeholder="Reason for re-admission, ward, doctor name..."
+              {...register('notes')}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-gray-100 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+          <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isSubmitting}>Cancel</Button>
+          <Button type="submit" loading={isSubmitting} className="flex-1 !bg-green-600 hover:!bg-green-700">
+            <Plus size={15} className="mr-1" /> Confirm Re-Admission
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ── Edit Patient Modal ──────────────────────────────────────────────────────
 function EditPatientModal({ patient, open, onClose }) {
   const queryClient = useQueryClient();
@@ -383,6 +492,7 @@ export default function PatientDetailPage() {
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [actionDocId, setActionDocId] = useState(null);
   const [deletePatientOpen, setDeletePatientOpen] = useState(false);
+  const [readmitOpen, setReadmitOpen] = useState(false);
 
   const { data: patientData, isLoading: patientLoading } = useQuery(
     ['patient', id],
@@ -572,6 +682,10 @@ export default function PatientDetailPage() {
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {/* Readmit Modal */}
+      {readmitOpen && (
+        <ReadmitModal patient={patient} open={readmitOpen} onClose={() => setReadmitOpen(false)} />
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <button onClick={() => navigate('/patients')} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors self-start">
           <ArrowLeft size={18} />
@@ -597,7 +711,7 @@ export default function PatientDetailPage() {
             <Button 
               variant="success" 
               size="sm" 
-              onClick={() => navigate(`/patients/new?uhid=${patient.uhid}&name=${encodeURIComponent(patient.name)}`)}
+            onClick={() => setReadmitOpen(true)}
             >
               <Plus size={13} /> Re-admit
             </Button>
