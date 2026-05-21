@@ -10,51 +10,60 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
       {backgroundImage && (
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{
-            backgroundImage: `url(${backgroundImage})`,
-          }}
+          style={{ backgroundImage: `url(${backgroundImage})` }}
         />
       )}
-      {/* Dark Overlay for Better Readability - More opaque when backgroundImage is present */}
+      {/* Dark Overlay */}
       <div className="absolute inset-0 bg-white/90 backdrop-blur-sm" />
 
-      {/* Subtle Background Blobs */}
-      <motion.div
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px]"
+      {/* CSS keyframe animations — no JS/React re-renders, no flickering */}
+      <style>{`
+        @keyframes blobPulse1 {
+          0%, 100% { transform: scale(1); opacity: 0.3; }
+          50%       { transform: scale(1.2); opacity: 0.5; }
+        }
+        @keyframes blobPulse2 {
+          0%, 100% { transform: scale(1); opacity: 0.3; }
+          50%       { transform: scale(1.3); opacity: 0.6; }
+        }
+        @keyframes spinSlow {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      {/* Background Blobs — pure CSS, zero React re-renders */}
+      <div
+        className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px] pointer-events-none"
+        style={{ animation: 'blobPulse1 10s ease-in-out infinite', willChange: 'transform, opacity' }}
       />
-      <motion.div
-        animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.6, 0.3] }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-        className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-100/50 rounded-full blur-[120px]"
+      <div
+        className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-100/50 rounded-full blur-[120px] pointer-events-none"
+        style={{ animation: 'blobPulse2 15s ease-in-out infinite 2s', willChange: 'transform, opacity' }}
       />
 
-      {/* Mobile Branding (Always at top, outside the card) */}
+      {/* Mobile Branding */}
       <div className="lg:hidden mb-8 text-center animate-fade-in w-full max-w-[280px] z-20">
         <Brand logoSize="md" className="!text-blue-700" />
         <div className="mt-4 h-px w-16 mx-auto bg-gradient-to-r from-transparent via-blue-400 to-transparent" />
       </div>
 
       <motion.div
-        layout
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         className="w-full max-w-5xl lg:grid lg:grid-cols-2 gap-0 bg-white rounded-[2.5rem] lg:rounded-[3rem] shadow-[0_40px_100px_rgba(0,0,0,0.06)] overflow-hidden border border-gray-100 relative z-10"
       >
-        {/* Branding Column (Desktop Only Glassmorphic) */}
-        <motion.div
-          layout
+        {/* Branding Column (Desktop Only) */}
+        <div
           className={clsx(
-            "relative hidden lg:flex flex-col items-center justify-center p-12 overflow-hidden",
-            reverse ? "order-last border-l border-gray-50" : "order-first border-r border-gray-50"
+            'relative hidden lg:flex flex-col items-center justify-center p-12 overflow-hidden',
+            reverse ? 'order-last border-l border-gray-50' : 'order-first border-r border-gray-50'
           )}
         >
-          {/* Decorative Elements */}
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-blue-800" />
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 50, repeat: Infinity, ease: "linear" }}
-            className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_50%_50%,#fff_0%,transparent_70%)]"
+          {/* Spinning radial glow — pure CSS */}
+          <div
+            className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_50%_50%,#fff_0%,transparent_70%)] pointer-events-none"
+            style={{ animation: 'spinSlow 50s linear infinite', willChange: 'transform' }}
           />
 
           <motion.div
@@ -68,25 +77,22 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
               <Brand className="!text-white" showSubtitle={true} logoSize="md" />
             </div>
           </motion.div>
-        </motion.div>
+        </div>
 
         {/* Form Column */}
-        <motion.div
-          layout
-          className="p-8 sm:p-12 lg:p-16 flex flex-col justify-center bg-white"
-        >
+        <div className="p-8 sm:p-12 lg:p-16 flex flex-col justify-center bg-white">
           <AnimatePresence mode="wait">
             <motion.div
               key={reverse ? 'signup-form' : 'login-form'}
               initial={{ opacity: 0, x: reverse ? 20 : -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: reverse ? -20 : 20 }}
-              transition={{ duration: 0.4, ease: "easeInOut" }}
+              transition={{ duration: 0.4, ease: 'easeInOut' }}
             >
               {children}
             </motion.div>
           </AnimatePresence>
-        </motion.div>
+        </div>
       </motion.div>
     </div>
   );
