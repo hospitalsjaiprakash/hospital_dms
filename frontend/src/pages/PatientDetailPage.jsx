@@ -19,8 +19,10 @@ import JSZip from 'jszip';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import ReactSelect from 'react-select';
+
+const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 // --- CONFIGURATION ---
 const API_URL = window.location.hostname === 'localhost' 
@@ -32,111 +34,236 @@ const STATUS_COLORS = {
   pending: 'amber', completed: 'green',
 };
 
-// ── Readmit Modal ────────────────────────────────────────────────────────────
+// ── Readmit Form (full-page, same as NewPatientPage readmit flow) ─────────────
 function ReadmitModal({ patient, open, onClose }) {
   const navigate = useNavigate();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm({
+  const queryClient = useQueryClient();
+  const [docFiles, setDocFiles] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const { register, handleSubmit, control, watch, formState: { errors, isSubmitting }, reset } = useForm({
     defaultValues: {
       ip_number: '',
       admission_date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
-      notes: '',
+      doc_type: '',
     }
   });
 
+  const watchDocType = watch('doc_type');
+
+  const handleClose = () => {
+    reset();
+    setDocFiles([]);
+    onClose();
+  };
+
   const onSubmit = async (data) => {
     try {
+      if (docFiles.length > 0 && !data.doc_type) {
+        toast.error('Please select a document type for the attached files');
+        return;
+      }
+
+      // Step 1: Create the new admission
       const result = await patientApi.create({
         uhid: patient.uhid,
         name: patient.name,
         ip_number: data.ip_number.trim(),
         admission_date: data.admission_date,
-        notes: data.notes || '',
       });
-      toast.success(`Patient re-admitted successfully! IP: ${data.ip_number}`);
-      onClose();
-      reset();
-      // Navigate to the new admission's profile
-      navigate(`/patients/${result.data.id}`);
+      const newPatientId = result.data.id;
+
+      // Step 2: Upload initial documents if any
+      if (docFiles.length > 0) {
+        setIsUploading(true);
+        for (let i = 0; i < docFiles.length; i++) {
+          const f = docFiles[i];
+          const formData = new FormData();
+          const fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${f.type === 'pdf' ? 'pdf' : 'jpg'}`;
+          formData.append('file', f.file, fileName);
+          formData.append('patient_id', newPatientId);
+          formData.append('doc_type', data.doc_type);
+          await documentApi.upload(formData);
+        }
+      }
+
+      queryClient.invalidateQueries('patients');
+      queryClient.invalidateQueries('stats');
+      queryClient.invalidateQueries(['patient', patient.id]);
+      toast.success(docFiles.length > 0
+        ? `Re-admitted with ${docFiles.length} document(s)! IP: ${data.ip_number}`
+        : `Patient re-admitted! IP: ${data.ip_number}`);
+      handleClose();
+      navigate(`/patients/${newPatientId}`);
     } catch (err) {
       toast.error(err.message || 'Re-admission failed');
+    } finally {
+      setIsUploading(false);
     }
   };
 
+  if (!open) return null;
+
   return (
-    <Modal open={open} onClose={onClose} title="Re-Admit Patient">
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0 -m-5">
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+    <Modal open={open} onClose={handleClose} title="Re-Admit Patient">
+      <div className="flex flex-col flex-1 min-h-0 -m-5">
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="max-w-2xl mx-auto space-y-5">
 
-          {/* Info Banner */}
-          <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl">
-            <Activity size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-blue-800">Re-Admitting Patient</p>
-              <p className="text-xs text-blue-600 mt-0.5">This will create a new admission record for the same patient. Previous records are preserved.</p>
+            {/* Header inside modal */}
+            <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-bold text-gray-900">Re-admitting {patient.name}</p>
+                <p className="text-xs text-gray-400 font-mono">{patient.uhid}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Read-only patient info */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Patient Name</label>
-              <input
-                readOnly
-                value={patient.name}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID</label>
-              <input
-                readOnly
-                value={patient.uhid}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed font-mono outline-none"
-              />
-            </div>
-          </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-          {/* New IP Number */}
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">New IP Number *</label>
-            <input
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Enter new IP number for this admission"
-              {...register('ip_number', { required: 'New IP Number is required' })}
-            />
-            {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
-          </div>
+                {/* Full Name — read-only */}
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
+                  <div className="relative">
+                    <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      readOnly
+                      value={patient.name}
+                      className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed font-semibold outline-none"
+                    />
+                  </div>
+                </div>
 
-          {/* Re-admission Date */}
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Re-Admission Date & Time *</label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              {...register('admission_date', { required: 'Admission date is required' })}
-            />
-            {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
-          </div>
+                {/* UHID — read-only */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+                  <div className="relative">
+                    <Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      readOnly
+                      value={patient.uhid}
+                      className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed font-semibold font-mono outline-none"
+                    />
+                  </div>
+                </div>
 
-          {/* Notes */}
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes (Optional)</label>
-            <textarea
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
-              placeholder="Reason for re-admission, ward, doctor name..."
-              {...register('notes')}
-            />
+                {/* New IP Number */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">New IP Number *</label>
+                  <div className="relative">
+                    <Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      placeholder="IP2026/001"
+                      className={clsx(
+                        'w-full rounded-lg border pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                        errors.ip_number ? 'border-red-400' : 'border-gray-200'
+                      )}
+                      {...register('ip_number', { required: 'IP Number is required' })}
+                    />
+                  </div>
+                  {errors.ip_number && <p className="text-xs text-red-500 mt-1">{errors.ip_number.message}</p>}
+                </div>
+
+                {/* Re-admission Date & Time */}
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Re-Admission Date & Time *</label>
+                  <div className="relative">
+                    <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="datetime-local"
+                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                      className={clsx(
+                        'w-full rounded-lg border pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                        errors.admission_date ? 'border-red-400' : 'border-gray-200'
+                      )}
+                      {...register('admission_date', { required: 'Admission date and time is required' })}
+                    />
+                  </div>
+                  {errors.admission_date && <p className="text-xs text-red-500 mt-1">{errors.admission_date.message}</p>}
+                </div>
+              </div>
+
+              {/* Auto-set info box */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm">
+                <p className="font-semibold text-blue-800 mb-1.5">Auto-set on creation:</p>
+                <ul className="space-y-1 text-blue-700">
+                  <li>• Hospital Status → <strong>Active (Admitted)</strong></li>
+                  <li>• Settlement Status → <strong>Pending</strong></li>
+                </ul>
+              </div>
+
+              {/* Initial Document section */}
+              <div className="pt-4 border-t border-gray-100 space-y-4">
+                <div>
+                  <h3 className="text-base font-bold text-gray-800">Initial Document <span className="text-gray-400 font-normal text-sm">(Optional)</span></h3>
+                  <p className="text-xs text-gray-500 mb-4">Attach an ID proof or admission photo while creating the patient.</p>
+                </div>
+
+                <CameraFileUploader
+                  files={docFiles}
+                  onChange={setDocFiles}
+                  disabled={isSubmitting || isUploading}
+                />
+
+                {docFiles.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                    <Controller
+                      name="doc_type"
+                      control={control}
+                      rules={{ required: docFiles.length > 0 ? 'Please select document type' : false }}
+                      render={({ field }) => (
+                        <ReactSelect
+                          {...field}
+                          options={DOC_TYPES}
+                          value={DOC_TYPES.find(c => c.value === field.value) || null}
+                          onChange={val => field.onChange(val.value)}
+                          placeholder="Search or select type..."
+                          className="text-sm"
+                          menuPortalTarget={document.body}
+                          styles={{
+                            control: (base, state) => ({
+                              ...base,
+                              borderColor: errors.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                              borderRadius: '0.5rem',
+                              minHeight: '42px',
+                              boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                              '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                            }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                          }}
+                        />
+                      )}
+                    />
+                    {errors.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* Form Actions */}
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={handleClose}
+                  disabled={isSubmitting || isUploading}
+                  className="w-full sm:w-auto"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  loading={isSubmitting || isUploading}
+                  className="w-full sm:w-auto"
+                >
+                  {isUploading ? `Uploading ${docFiles.length} file(s)...` : 'Re-admit Patient'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-gray-100 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-          <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isSubmitting}>Cancel</Button>
-          <Button type="submit" loading={isSubmitting} className="flex-1 !bg-green-600 hover:!bg-green-700">
-            <Plus size={15} className="mr-1" /> Confirm Re-Admission
-          </Button>
-        </div>
-      </form>
+      </div>
     </Modal>
   );
 }
