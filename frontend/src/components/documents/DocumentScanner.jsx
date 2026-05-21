@@ -137,7 +137,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [isDraggingHandle, setIsDraggingHandle] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [previewSide, setPreviewSide] = useState('right'); // 'right' | 'left'
-  const [showCropOverlay, setShowCropOverlay] = useState(false); // eye closed by default
   const [autoDetected, setAutoDetected] = useState(false); // true when OpenCV found document edges
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
@@ -298,7 +297,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
       }
 
       setPoints(bestPoints);
-      setShowCropOverlay(true); // auto-show the crop rectangle when entering crop step
       setStep('crop');
     }, 'image/jpeg', 0.92);
   };
@@ -687,21 +685,6 @@ export default function DocumentScanner({ onComplete, onClose }) {
         )}
 
         <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-4">
-          {/* Floating eye toggle button */}
-          <button
-            type="button"
-            onClick={() => setShowCropOverlay(prev => !prev)}
-            title={showCropOverlay ? 'Hide crop rectangle' : 'Show crop rectangle'}
-            className={clsx(
-              "absolute right-4 top-4 z-30 w-10 h-10 rounded-full flex items-center justify-center border-2 shadow-lg transition-all duration-200",
-              showCropOverlay
-                ? "bg-blue-600 border-blue-400 text-white shadow-[0_0_12px_rgba(59,130,246,0.6)]"
-                : "bg-gray-800/80 border-white/30 text-gray-300 hover:bg-gray-700 hover:text-white"
-            )}
-          >
-            {showCropOverlay ? <Eye size={18} /> : <EyeOff size={18} />}
-          </button>
-
           <div
             ref={cropContainerRef}
             className="relative select-none"
@@ -719,13 +702,14 @@ export default function DocumentScanner({ onComplete, onClose }) {
               alt="captured"
             />
 
-            {/* Crop overlay SVG — toggled by eye button */}
-            {showCropOverlay && (
-              <svg 
+            {/* Crop overlay SVG */}
+            {points.length === 4 && (
+              <svg
                 className="absolute inset-0 w-full h-full overflow-visible"
                 viewBox={`0 0 ${iw} ${ih}`}
                 preserveAspectRatio="none"
               >
+                {/* Dark mask outside crop area */}
                 <defs>
                   <mask id="cropMask">
                     <rect width={iw} height={ih} fill="white" />
@@ -737,13 +721,15 @@ export default function DocumentScanner({ onComplete, onClose }) {
                 </defs>
                 <rect width={iw} height={ih} fill="rgba(0,0,0,0.5)" mask="url(#cropMask)" />
 
+                {/* Crop border polygon */}
                 <polygon
                   points={points.map(p => `${p.x},${p.y}`).join(' ')}
-                  fill="rgba(59,130,246,0.15)"
+                  fill="rgba(59,130,246,0.08)"
                   stroke="#60a5fa"
                   strokeWidth={2 * (iw / 400)}
                 />
 
+                {/* Dashed edge lines */}
                 {points.map((p, i) => {
                   const next = points[(i + 1) % 4];
                   return (
@@ -751,53 +737,44 @@ export default function DocumentScanner({ onComplete, onClose }) {
                       key={`line-${i}`}
                       x1={p.x} y1={p.y}
                       x2={next.x} y2={next.y}
-                      stroke="#93c5fd" 
-                      strokeWidth={1.5 * (iw / 400)} 
+                      stroke="#93c5fd"
+                      strokeWidth={1.5 * (iw / 400)}
                       strokeDasharray={`${6 * (iw / 400)} ${3 * (iw / 400)}`}
                     />
                   );
                 })}
 
+                {/* Corner drag handles */}
                 {points.map((p, i) => (
                   <g key={`handle-${i}`}>
+                    {/* Large invisible hit area */}
                     <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={18 * (iw / 400)}
+                      cx={p.x} cy={p.y}
+                      r={22 * (iw / 400)}
                       fill="transparent"
                       style={{ cursor: 'move', pointerEvents: 'all' }}
                       onMouseDown={e => onMouseDown(e, i)}
                       onTouchStart={e => onTouchStart(e, i)}
                     />
+                    {/* Outer white ring */}
                     <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={10 * (iw / 400)}
+                      cx={p.x} cy={p.y}
+                      r={11 * (iw / 400)}
                       fill="white"
                       stroke="#3b82f6"
                       strokeWidth={3 * (iw / 400)}
                       style={{ pointerEvents: 'none' }}
                     />
+                    {/* Inner blue dot */}
                     <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={4 * (iw / 400)}
+                      cx={p.x} cy={p.y}
+                      r={5 * (iw / 400)}
                       fill="#3b82f6"
                       style={{ pointerEvents: 'none' }}
                     />
                   </g>
                 ))}
               </svg>
-            )}
-
-            {/* Hint when overlay is hidden */}
-            {!showCropOverlay && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/50 backdrop-blur-sm px-4 py-2 rounded-full flex items-center gap-2 border border-white/20">
-                  <EyeOff size={14} className="text-gray-300" />
-                  <span className="text-white text-xs font-semibold">Tap eye icon to show crop area</span>
-                </div>
-              </div>
             )}
           </div>
         </div>
@@ -809,7 +786,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
           <div className="flex w-full items-center justify-between">
             <button
-              onClick={() => { setAutoDetected(false); setShowCropOverlay(false); setStep('camera'); }}
+              onClick={() => { setAutoDetected(false); setStep('camera'); }}
               className="flex items-center gap-2 text-white/60 font-bold text-sm hover:text-white transition-colors"
             >
               <RotateCw size={16} /> Retake
