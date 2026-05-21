@@ -19,12 +19,12 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
       {/* CSS keyframe animations — no JS/React re-renders, no flickering */}
       <style>{`
         @keyframes blobPulse1 {
-          0%, 100% { transform: scale(1); opacity: 0.3; }
-          50%       { transform: scale(1.2); opacity: 0.5; }
+          0%, 100% { opacity: 0.25; }
+          50%       { opacity: 0.5; }
         }
         @keyframes blobPulse2 {
-          0%, 100% { transform: scale(1); opacity: 0.3; }
-          50%       { transform: scale(1.3); opacity: 0.6; }
+          0%, 100% { opacity: 0.2; }
+          50%       { opacity: 0.55; }
         }
         @keyframes spinSlow {
           from { transform: rotate(0deg); }
@@ -35,11 +35,11 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
       {/* Background Blobs — pure CSS, zero React re-renders */}
       <div
         className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px] pointer-events-none"
-        style={{ animation: 'blobPulse1 10s ease-in-out infinite', willChange: 'transform, opacity' }}
+        style={{ animation: 'blobPulse1 10s ease-in-out infinite', willChange: 'opacity' }}
       />
       <div
         className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-100/50 rounded-full blur-[120px] pointer-events-none"
-        style={{ animation: 'blobPulse2 15s ease-in-out infinite 2s', willChange: 'transform, opacity' }}
+        style={{ animation: 'blobPulse2 15s ease-in-out infinite 2s', willChange: 'opacity' }}
       />
 
       {/* Mobile Branding */}
