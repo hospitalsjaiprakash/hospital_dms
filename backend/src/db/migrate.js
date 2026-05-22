@@ -301,6 +301,14 @@ const migrations = [
       -- Add index for searching
       CREATE INDEX IF NOT EXISTS idx_patients_ip_number ON patients(ip_number);
     `
+  },
+  {
+    name: '019_add_none_to_settlement',
+    sql: `
+      ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_settlement_status_check;
+      ALTER TABLE patients ADD CONSTRAINT patients_settlement_status_check CHECK (settlement_status IN ('none', 'pending', 'completed'));
+      ALTER TABLE patients ALTER COLUMN settlement_status SET DEFAULT 'none';
+    `
   }
 ];
 

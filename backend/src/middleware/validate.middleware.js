@@ -49,7 +49,7 @@ const schemas = {
     }),
     admission_date: Joi.date().optional(),
     hospital_status: Joi.string().valid('active', 'discharged').optional(),
-    settlement_status: Joi.string().valid('pending', 'completed').optional(),
+    settlement_status: Joi.string().valid('none', 'pending', 'completed').optional(),
     discharge_date: Joi.date().optional().allow(null),
     settlement_date: Joi.date().optional().allow(null),
     ip_number: Joi.string().min(1).max(100).optional(),
@@ -59,7 +59,7 @@ const schemas = {
   bulkUpdatePatients: Joi.object({
     patientIds: Joi.array().items(Joi.string().uuid()).min(1).required(),
     hospital_status: Joi.string().valid('discharged').optional(),
-    settlement_status: Joi.string().valid('completed').optional(),
+    settlement_status: Joi.string().valid('none', 'completed', 'pending').optional(),
     discharge_date: Joi.date().optional(),
     settlement_date: Joi.date().optional(),
   }),

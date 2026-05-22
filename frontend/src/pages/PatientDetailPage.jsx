@@ -275,7 +275,7 @@ function EditPatientModal({ patient, open, onClose }) {
   const [docFile, setDocFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
     defaultValues: {
       name: patient.name,
       ip_number: patient.ip_number,
@@ -283,7 +283,7 @@ function EditPatientModal({ patient, open, onClose }) {
       admission_date: patient.admission_date ? new Date(new Date(patient.admission_date).getTime() - new Date(patient.admission_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
       notes: patient.notes || '',
       hospital_status: patient.hospital_status,
-      settlement_status: patient.settlement_status,
+      settlement_status: patient.settlement_status || 'none',
       discharge_date: patient.discharge_date ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
       settlement_date: patient.settlement_date ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
     }
@@ -291,6 +291,14 @@ function EditPatientModal({ patient, open, onClose }) {
 
   const watchHospitalStatus = watch('hospital_status');
   const watchSettlementStatus = watch('settlement_status');
+
+  React.useEffect(() => {
+    // If the user is discharging the patient, automatically ensure settlement_status doesn't blindly default to pending unless it was already pending. 
+    // Actually, we'll let them explicitly check the box if they want pending.
+    if (watchHospitalStatus === 'discharged' && patient.hospital_status === 'active' && patient.settlement_status !== 'pending') {
+      setValue('settlement_status', 'none');
+    }
+  }, [watchHospitalStatus, patient.hospital_status, patient.settlement_status, setValue]);
 
   const { mutateAsync, isLoading } = useMutation(
     (data) => patientApi.update(patient.id, data)
@@ -417,14 +425,38 @@ function EditPatientModal({ patient, open, onClose }) {
                     {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
                   </div>
 
-                  {/* Settlement Status — only when discharged */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Settlement Status</label>
-                    <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      {...register('settlement_status')}>
-                      <option value="pending">Pending</option>
-                      <option value="completed">Completed</option>
-                    </select>
+                  {/* Settlement Status explicitly using a checkbox */}
+                  <div className="space-y-2 mt-2">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement</label>
+                    <div className="flex flex-col gap-2">
+                      <select className="hidden" {...register('settlement_status')}>
+                        <option value="none">None</option>
+                        <option value="pending">Pending</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                      
+                      {watchSettlementStatus === 'completed' ? (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 font-semibold flex items-center gap-2">
+                          <CheckCircle size={16} className="text-green-600" />
+                          PMJAY Settlement Completed
+                        </div>
+                      ) : (
+                        <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 mt-0.5 text-amber-600 rounded border-gray-300 focus:ring-amber-500 cursor-pointer"
+                            checked={watchSettlementStatus === 'pending'}
+                            onChange={(e) => {
+                              setValue('settlement_status', e.target.checked ? 'pending' : 'none', { shouldDirty: true });
+                            }}
+                          />
+                          <div>
+                            <span className="text-sm font-semibold text-gray-800 block">Mark as PMJAY Pending Settlement</span>
+                            <span className="text-xs text-gray-500">Check this box if the patient needs to be settled via PMJAY.</span>
+                          </div>
+                        </label>
+                      )}
+                    </div>
                   </div>
 
                   {/* PMJAY Settlement Date — only when discharged AND settlement completed */}

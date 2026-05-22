@@ -38,6 +38,7 @@ export default function PatientsPage() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [bulkDate, setBulkDate] = useState(localNow());
+  const [bulkMarkPending, setBulkMarkPending] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -132,6 +133,7 @@ export default function PatientsPage() {
 
   const openPreviewModal = () => {
     setBulkDate(localNow());
+    setBulkMarkPending(false);
     setShowPreviewModal(true);
   };
 
@@ -143,6 +145,7 @@ export default function PatientsPage() {
       if (activeTab === 'active') {
         actionData.hospital_status = 'discharged';
         actionData.discharge_date = isoDate;
+        actionData.settlement_status = bulkMarkPending ? 'pending' : 'none';
       } else if (activeTab === 'pending') {
         actionData.settlement_status = 'completed';
         actionData.settlement_date = isoDate;
@@ -436,6 +439,22 @@ export default function PatientsPage() {
             />
             <p className="text-xs text-blue-500">Defaults to current date & time if left unchanged.</p>
           </div>
+
+          {/* PMJAY Pending Checkbox (only for discharge) */}
+          {activeTab === 'active' && (
+            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+              <input 
+                type="checkbox" 
+                className="w-4 h-4 mt-0.5 text-amber-600 rounded border-gray-300 focus:ring-amber-500 cursor-pointer"
+                checked={bulkMarkPending}
+                onChange={(e) => setBulkMarkPending(e.target.checked)}
+              />
+              <div>
+                <span className="text-sm font-semibold text-gray-800 block">Mark as PMJAY Pending Settlement</span>
+                <span className="text-xs text-gray-500">Check this box if these patients need to be settled via PMJAY.</span>
+              </div>
+            </label>
+          )}
 
           {/* Patient list preview */}
           <div className="max-h-52 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">

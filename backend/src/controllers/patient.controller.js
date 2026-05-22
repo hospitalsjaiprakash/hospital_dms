@@ -28,7 +28,7 @@ const createPatient = async (req, res) => {
 
   const result = await db.query(
     `INSERT INTO patients (uhid, name, admission_date, ip_number, notes, hospital_status, settlement_status, created_by)
-     VALUES ($1, $2, $3, $4, $5, 'active', 'pending', $6)
+     VALUES ($1, $2, $3, $4, $5, 'active', 'none', $6)
      RETURNING *`,
     [uhid, name, admission_date, ip_number, notes || null, req.user.id]
   );
