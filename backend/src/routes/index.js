@@ -74,6 +74,7 @@ router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.
 router.get('/users', authenticate, authorize('admin', 'hod'), userCtrl.getUsers);
 router.post('/users', authenticate, authorize('admin', 'hod'), validate(schemas.createUser), userCtrl.createUser);
 router.patch('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
+router.delete('/users/:id', authenticate, authorize('admin'), userCtrl.deleteUser);
 
 // ── Audit Logs (Admin & HOD) ────────────────────────────────────────────────
 router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc', 'nursing'), auditCtrl.getLogs);

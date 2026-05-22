@@ -6,7 +6,7 @@ import { Card, Badge, Button, Input, Select, Spinner, EmptyState, Pagination, Mo
 import { useForm } from 'react-hook-form';
 import {
   UserPlus, Search, Shield, Users, CheckCircle,
-  XCircle, Eye, EyeOff, UserCheck, AlertCircle
+  XCircle, Eye, EyeOff, UserCheck, AlertCircle, Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -87,7 +87,7 @@ function AddUserModal({ open, onClose, currentUser }) {
   );
 }
 
-function UserDetailsModal({ user, open, onClose, currentUser }) {
+function UserDetailsModal({ user, open, onClose, currentUser, onDelete }) {
   const [page, setPage] = useState(1);
   const { data, isLoading } = useQuery(
     ['user_audit_logs', user?.id, page],
@@ -160,6 +160,14 @@ function UserDetailsModal({ user, open, onClose, currentUser }) {
             </div>
           )}
         </div>
+        
+        {currentUser?.role === 'admin' && user.id !== currentUser.id && (
+          <div className="pt-4 border-t border-gray-100 flex justify-end">
+            <Button variant="danger" size="sm" onClick={() => onDelete(user)}>
+              <Trash2 size={14} /> Delete User
+            </Button>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -192,18 +200,31 @@ export default function UsersPage() {
     onError: (err) => toast.error(err.message),
   });
 
+  const { mutate: deleteUser } = useMutation(userApi.delete, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('users');
+      toast.success('User deleted successfully');
+      setSelectedUser(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const users = data?.data || [];
   const pagination = data?.pagination;
 
   const handleConfirmAction = () => {
     if (!confirmTarget) return;
-    toggleStatus(confirmTarget.id);
+    if (confirmAction === 'delete') {
+      deleteUser(confirmTarget.id);
+    } else {
+      toggleStatus(confirmTarget.id);
+    }
     setConfirmTarget(null);
     setConfirmAction(null);
   };
 
-  const openConfirm = (user) => {
-    const action = user.is_active ? 'deactivate' : 'activate';
+  const openConfirm = (user, actionOverride) => {
+    const action = actionOverride || (user.is_active ? 'deactivate' : 'activate');
     setConfirmTarget(user);
     setConfirmAction(action);
   };
@@ -319,21 +340,23 @@ export default function UsersPage() {
       </Card>
 
       <AddUserModal open={addUserOpen} onClose={() => setAddUserOpen(false)} currentUser={currentUser} />
-      <UserDetailsModal user={selectedUser} open={!!selectedUser} onClose={() => setSelectedUser(null)} currentUser={currentUser} />
+      <UserDetailsModal user={selectedUser} open={!!selectedUser} onClose={() => setSelectedUser(null)} currentUser={currentUser} onDelete={(user) => { setSelectedUser(null); openConfirm(user, 'delete'); }} />
 
       <Modal
         open={!!confirmTarget}
         onClose={() => { setConfirmTarget(null); setConfirmAction(null); }}
-        title={confirmAction === 'deactivate' ? 'Confirm Deactivation' : 'Confirm Action'}
+        title={confirmAction === 'delete' ? 'Confirm Deletion' : confirmAction === 'deactivate' ? 'Confirm Deactivation' : 'Confirm Action'}
         maxWidth="max-w-sm"
       >
         <div className="space-y-4">
           <div className="flex items-center gap-3 text-gray-700">
             <AlertCircle className="w-6 h-6 text-red-500" />
             <div>
-              <p className="font-semibold text-gray-900">{confirmAction === 'deactivate' ? 'Deactivate user' : 'Activate user'}</p>
+              <p className="font-semibold text-gray-900">{confirmAction === 'delete' ? 'Delete User' : confirmAction === 'deactivate' ? 'Deactivate user' : 'Activate user'}</p>
               <p className="text-sm text-gray-500">
-                {confirmAction === 'deactivate'
+                {confirmAction === 'delete'
+                  ? 'Are you sure you want to permanently delete this user? This action cannot be undone. If they have uploaded documents, deletion will fail.'
+                  : confirmAction === 'deactivate'
                   ? 'Are you sure you want to deactivate this user? They will no longer be able to sign in.'
                   : 'Are you sure you want to activate this user? They will be able to sign in again.'}
               </p>
@@ -344,11 +367,11 @@ export default function UsersPage() {
               Cancel
             </Button>
             <Button
-              variant={confirmAction === 'deactivate' ? 'danger' : 'success'}
+              variant={confirmAction === 'deactivate' || confirmAction === 'delete' ? 'danger' : 'success'}
               className="flex-1"
               onClick={handleConfirmAction}
             >
-              {confirmAction === 'deactivate' ? 'Deactivate' : 'Activate'}
+              {confirmAction === 'delete' ? 'Delete' : confirmAction === 'deactivate' ? 'Deactivate' : 'Activate'}
             </Button>
           </div>
         </div>

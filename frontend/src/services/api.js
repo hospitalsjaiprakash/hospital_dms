@@ -103,6 +103,7 @@ export const userApi = {
   getAll: (params) => api.get('/users', { params }),
   create: (data) => api.post('/users', data),
   toggleStatus: (id) => api.patch(`/users/${id}/status`),
+  delete: (id) => api.delete(`/users/${id}`),
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

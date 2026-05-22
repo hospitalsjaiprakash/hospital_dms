@@ -95,4 +95,31 @@ const toggleUserStatus = async (req, res) => {
   return sendSuccess(res, null, `User ${newStatus ? 'activated' : 'deactivated'} successfully`);
 };
 
-module.exports = { getUsers, createUser, toggleUserStatus };
+const deleteUser = async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Only administrators can delete users', 403);
+  }
+
+  const { id } = req.params;
+
+  if (id === req.user.id) return sendError(res, 'Cannot delete your own account', 400);
+
+  try {
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id, name', [id]);
+    
+    if (result.rowCount === 0) {
+      return sendError(res, 'User not found', 404);
+    }
+
+    await auditLog(ACTIONS.USER_UPDATE, 'user')(req, id, { deleted: true }, null);
+
+    return sendSuccess(res, null, `User ${result.rows[0].name} deleted successfully`);
+  } catch (err) {
+    if (err.code === '23503') {
+      return sendError(res, 'Cannot delete user because they have uploaded documents or associated records. Please deactivate them instead.', 409);
+    }
+    throw err;
+  }
+};
+
+module.exports = { getUsers, createUser, toggleUserStatus, deleteUser };
