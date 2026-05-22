@@ -114,7 +114,10 @@ export default function PatientsPage() {
     if (e.target.checked) {
       setSelectedPatients(prev => {
         const existingIds = new Set(prev.map(p => p.id));
-        const toAdd = patients.filter(p => !existingIds.has(p.id));
+        const selectablePatients = activeTab === 'discharged' 
+          ? patients.filter(p => p.settlement_status === 'none')
+          : patients;
+        const toAdd = selectablePatients.filter(p => !existingIds.has(p.id));
         return [...prev, ...toAdd];
       });
     } else {
@@ -124,6 +127,9 @@ export default function PatientsPage() {
   };
 
   const handleSelectOne = (patient) => {
+    // Prevent selecting unselectable patients
+    if (activeTab === 'discharged' && patient.settlement_status !== 'none') return;
+    
     setSelectedPatients(prev =>
       prev.some(p => p.id === patient.id)
         ? prev.filter(p => p.id !== patient.id)
@@ -289,11 +295,15 @@ export default function PatientsPage() {
                   <input
                     type="checkbox"
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-1 cursor-pointer"
-                    checked={patients.length > 0 && patients.every(p => selectedIds.includes(p.id))}
+                    checked={patients.length > 0 && (() => {
+                      const selectable = activeTab === 'discharged' ? patients.filter(p => p.settlement_status === 'none') : patients;
+                      return selectable.length > 0 && selectable.every(p => selectedIds.includes(p.id));
+                    })()}
                     ref={el => {
                       if (el) {
-                        const someSelected = patients.some(p => selectedIds.includes(p.id));
-                        const allSelected = patients.every(p => selectedIds.includes(p.id));
+                        const selectable = activeTab === 'discharged' ? patients.filter(p => p.settlement_status === 'none') : patients;
+                        const someSelected = selectable.some(p => selectedIds.includes(p.id));
+                        const allSelected = selectable.length > 0 && selectable.every(p => selectedIds.includes(p.id));
                         el.indeterminate = someSelected && !allSelected;
                       }
                     }}
@@ -328,10 +338,15 @@ export default function PatientsPage() {
                   <div className={`flex items-center gap-3 flex-1 ${patientColSpan} min-w-0`}>
                     {canBulkSelect && (
                       <div
-                        className="flex items-center p-1 hover:bg-gray-200 rounded"
+                        className={`flex items-center p-1 rounded ${
+                          (activeTab === 'discharged' && patient.settlement_status !== 'none') 
+                            ? 'opacity-0 pointer-events-none' 
+                            : 'hover:bg-gray-200'
+                        }`}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                          if (activeTab === 'discharged' && patient.settlement_status !== 'none') return;
                           handleSelectOne(patient);
                         }}
                       >
