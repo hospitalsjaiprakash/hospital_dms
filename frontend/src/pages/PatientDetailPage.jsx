@@ -427,37 +427,23 @@ function EditPatientModal({ patient, open, onClose }) {
                     {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
                   </div>
 
-                  {/* Settlement Status explicitly using a checkbox */}
                   <div className="space-y-2 mt-2">
                     <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement</label>
-                    <div className="flex flex-col gap-2">
-                      <select className="hidden" {...register('settlement_status')}>
-                        <option value="none">None</option>
-                        <option value="pending">Pending</option>
-                        <option value="completed">Completed</option>
-                      </select>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'none' ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
+                        <input type="radio" value="none" {...register('settlement_status')} className="w-4 h-4 text-gray-600 border-gray-300 focus:ring-gray-500" />
+                        <span className="text-sm font-semibold text-gray-800">None</span>
+                      </label>
                       
-                      {watchSettlementStatus === 'completed' ? (
-                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 font-semibold flex items-center gap-2">
-                          <CheckCircle size={16} className="text-green-600" />
-                          PMJAY Settlement Completed
-                        </div>
-                      ) : (
-                        <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                          <input 
-                            type="checkbox" 
-                            className="w-4 h-4 mt-0.5 text-amber-600 rounded border-gray-300 focus:ring-amber-500 cursor-pointer"
-                            checked={watchSettlementStatus === 'pending'}
-                            onChange={(e) => {
-                              setValue('settlement_status', e.target.checked ? 'pending' : 'none', { shouldDirty: true });
-                            }}
-                          />
-                          <div>
-                            <span className="text-sm font-semibold text-gray-800 block">Mark as PMJAY Pending Settlement</span>
-                            <span className="text-xs text-gray-500">Check this box if the patient needs to be settled via PMJAY.</span>
-                          </div>
-                        </label>
-                      )}
+                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'pending' ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
+                        <input type="radio" value="pending" {...register('settlement_status')} className="w-4 h-4 text-amber-600 border-gray-300 focus:ring-amber-500" />
+                        <span className="text-sm font-semibold text-gray-800">Pending</span>
+                      </label>
+
+                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'completed' ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
+                        <input type="radio" value="completed" {...register('settlement_status')} className="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500" />
+                        <span className="text-sm font-semibold text-gray-800">Settled</span>
+                      </label>
                     </div>
                   </div>
 
