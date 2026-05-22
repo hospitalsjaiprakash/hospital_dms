@@ -390,7 +390,7 @@ export default function PatientsPage() {
                   {/* Discharge Date (shown in discharged / pending / settled tabs) */}
                   {showDischargeCol && (
                     <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
-                      {patient.discharge_date ? (
+                      {patient.hospital_status === 'discharged' && patient.discharge_date ? (
                         <>
                           <span className="text-xs font-semibold text-purple-700">{fmtDate(patient.discharge_date)}</span>
                           <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.discharge_date)}</span>
@@ -404,7 +404,7 @@ export default function PatientsPage() {
                   {/* Pending Date (shown in pending / settled tabs) */}
                   {showPendingCol && (
                     <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
-                      {patient.pending_date ? (
+                      {patient.settlement_status === 'pending' && patient.pending_date ? (
                         <>
                           <span className="text-xs font-semibold text-amber-700">{fmtDate(patient.pending_date)}</span>
                           <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.pending_date)}</span>
@@ -418,7 +418,7 @@ export default function PatientsPage() {
                   {/* Settlement Date (shown only in settled tab) */}
                   {showSettlementCol && (
                     <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
-                      {patient.settlement_date ? (
+                      {patient.settlement_status === 'completed' && patient.settlement_date ? (
                         <>
                           <span className="text-xs font-semibold text-green-700">{fmtDate(patient.settlement_date)}</span>
                           <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.settlement_date)}</span>

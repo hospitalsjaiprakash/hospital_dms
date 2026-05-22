@@ -926,7 +926,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {patient.discharge_date && (
+          {patient.hospital_status === 'discharged' && patient.discharge_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <CheckCircle size={14} className="text-purple-600" />
@@ -941,7 +941,7 @@ export default function PatientDetailPage() {
             </div>
           )}
 
-          {patient.pending_date && (
+          {patient.settlement_status === 'pending' && patient.pending_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Clock size={14} className="text-amber-600" />
@@ -956,7 +956,7 @@ export default function PatientDetailPage() {
             </div>
           )}
 
-          {patient.settlement_date && (
+          {patient.settlement_status === 'completed' && patient.settlement_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <CheckCircle size={14} className="text-green-600" />
