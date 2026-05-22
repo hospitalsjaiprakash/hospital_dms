@@ -52,6 +52,7 @@ const schemas = {
     settlement_status: Joi.string().valid('none', 'pending', 'completed').optional(),
     discharge_date: Joi.date().optional().allow(null),
     settlement_date: Joi.date().optional().allow(null),
+    pending_date: Joi.date().optional().allow(null),
     ip_number: Joi.string().min(1).max(100).optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
@@ -62,6 +63,7 @@ const schemas = {
     settlement_status: Joi.string().valid('none', 'completed', 'pending').optional(),
     discharge_date: Joi.date().optional(),
     settlement_date: Joi.date().optional(),
+    pending_date: Joi.date().optional(),
   }),
 
   uploadDocument: Joi.object({

@@ -189,7 +189,7 @@ function ReadmitModal({ patient, open, onClose }) {
                 <p className="font-semibold text-blue-800 mb-1.5">Auto-set on creation:</p>
                 <ul className="space-y-1 text-blue-700">
                   <li>• Hospital Status → <strong>Active (Admitted)</strong></li>
-                  <li>• Settlement Status → <strong>Pending</strong></li>
+                  <li>• Settlement Status → <strong>None</strong></li>
                 </ul>
               </div>
 
@@ -285,6 +285,7 @@ function EditPatientModal({ patient, open, onClose }) {
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status || 'none',
       discharge_date: patient.discharge_date ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      pending_date: patient.pending_date ? new Date(new Date(patient.pending_date).getTime() - new Date(patient.pending_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
       settlement_date: patient.settlement_date ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
     }
   });
@@ -317,6 +318,7 @@ function EditPatientModal({ patient, open, onClose }) {
         delete payload.settlement_date;
       } else {
         if (payload.discharge_date === '') payload.discharge_date = null;
+        if (payload.pending_date === '') payload.pending_date = null;
         if (payload.settlement_date === '') payload.settlement_date = null;
       }
 
@@ -458,6 +460,19 @@ function EditPatientModal({ patient, open, onClose }) {
                       )}
                     </div>
                   </div>
+
+                  {/* PMJAY Pending Date — only when discharged AND settlement pending or completed */}
+                  {(watchSettlementStatus === 'pending' || watchSettlementStatus === 'completed') && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Pending Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        {...register('pending_date')}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
+                    </div>
+                  )}
 
                   {/* PMJAY Settlement Date — only when discharged AND settlement completed */}
                   {watchSettlementStatus === 'completed' && (
@@ -897,7 +912,7 @@ export default function PatientDetailPage() {
       </div>
 
       <Card>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
               <Calendar size={14} className="text-green-600" />
@@ -921,6 +936,21 @@ export default function PatientDetailPage() {
                 <p className="text-sm font-semibold text-gray-800">
                   {format(new Date(patient.discharge_date), 'dd MMM yyyy')}
                   <span className="text-xs font-normal text-gray-500 ml-1">at {format(new Date(patient.discharge_date), 'hh:mm a')}</span>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {patient.pending_date && (
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Clock size={14} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 font-medium">PMJAY Pending</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {format(new Date(patient.pending_date), 'dd MMM yyyy')}
+                  <span className="text-xs font-normal text-gray-500 ml-1">at {format(new Date(patient.pending_date), 'hh:mm a')}</span>
                 </p>
               </div>
             </div>
@@ -1006,6 +1036,12 @@ export default function PatientDetailPage() {
                     <div className="flex items-center gap-1.5 text-xs text-gray-600">
                       <CheckCircle size={12} className="text-purple-400" />
                       <span className="font-medium text-purple-700">Discharged: {format(new Date(h.discharge_date), 'dd MMM yyyy')}</span>
+                    </div>
+                  )}
+                  {h.pending_date && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <Clock size={12} className="text-amber-500" />
+                      <span className="font-medium text-amber-700">Pending: {format(new Date(h.pending_date), 'dd MMM yyyy')}</span>
                     </div>
                   )}
                   {h.settlement_date && (

@@ -309,6 +309,20 @@ const migrations = [
       ALTER TABLE patients ADD CONSTRAINT patients_settlement_status_check CHECK (settlement_status IN ('none', 'pending', 'completed'));
       ALTER TABLE patients ALTER COLUMN settlement_status SET DEFAULT 'none';
     `
+  },
+  {
+    name: '020_add_pending_date',
+    sql: `
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS pending_date TIMESTAMPTZ;
+      
+      -- Backfill pending_date for existing patients that are already pending or completed
+      UPDATE patients 
+      SET pending_date = discharge_date 
+      WHERE (settlement_status = 'pending' OR settlement_status = 'completed') 
+        AND pending_date IS NULL;
+        
+      CREATE INDEX IF NOT EXISTS idx_patients_pending_date ON patients(pending_date);
+    `
   }
 ];
 

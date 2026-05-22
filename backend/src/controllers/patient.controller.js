@@ -184,7 +184,7 @@ const getPatient = async (req, res) => {
 
   // Fetch admission history (other records with same UHID)
   const history = await db.query(
-    `SELECT p.id, p.ip_number, p.admission_date, p.discharge_date, p.hospital_status, p.settlement_status, p.created_at, p.settlement_date,
+    `SELECT p.id, p.ip_number, p.admission_date, p.discharge_date, p.hospital_status, p.settlement_status, p.created_at, p.settlement_date, p.pending_date,
             (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false)::int as doc_count,
             u.name as staff_name
      FROM patients p
@@ -228,6 +228,11 @@ const updatePatient = async (req, res) => {
     updates.discharge_date = updates.discharge_date || new Date().toISOString();
   }
 
+  // Auto-set pending_date when marking as pending
+  if (updates.settlement_status === 'pending' && current.settlement_status !== 'pending') {
+    updates.pending_date = updates.pending_date || new Date().toISOString();
+  }
+
   // Auto-set settlement_date when marking as completed
   if (updates.settlement_status === 'completed' && current.settlement_status !== 'completed') {
     updates.settlement_date = updates.settlement_date || new Date().toISOString();
@@ -249,7 +254,7 @@ const updatePatient = async (req, res) => {
 };
 
 const bulkUpdatePatients = async (req, res) => {
-  const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date } = req.body;
+  const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date, pending_date } = req.body;
   const now = new Date().toISOString();
 
   if (req.user.role === 'pcc') {
@@ -277,6 +282,11 @@ const bulkUpdatePatients = async (req, res) => {
         // Set discharge_date (full timestamp) when bulk-discharging
         if (updates.hospital_status === 'discharged' && current.hospital_status === 'active') {
           updates.discharge_date = discharge_date || now;
+        }
+
+        // Set pending_date when bulk-pending
+        if (updates.settlement_status === 'pending' && current.settlement_status !== 'pending') {
+          updates.pending_date = pending_date || now;
         }
 
         // Set settlement_date when bulk-settling
