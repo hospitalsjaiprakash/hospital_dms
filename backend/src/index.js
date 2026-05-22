@@ -17,7 +17,9 @@ const { runMigrations } = require('./db/migrate');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Security Middleware ───────────────────────────────────────────────────────
+// ── Security Middleware & Network Configurations ─────────────────────────────
+app.set('trust proxy', 1); // Trust first proxy (Nginx/PM2) for rate limiting and logging
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
@@ -32,7 +34,7 @@ app.use(cors({
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
+  max: parseInt(process.env.RATE_LIMIT_MAX || '2000'),
   message: { success: false, message: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -90,10 +92,12 @@ app.use((err, req, res, next) => {
 });
 
 // ── Startup ───────────────────────────────────────────────────────────────────
+let server;
+
 async function start() {
   try {
     await runMigrations();
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       logger.info(`🏥 Hospital DMS API running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
@@ -106,9 +110,20 @@ async function start() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received. Graceful shutdown...');
-  const { pool } = require('./db');
-  await pool.end();
-  process.exit(0);
+  
+  if (server) {
+    server.close(async () => {
+      logger.info('HTTP server closed.');
+      const { pool } = require('./db');
+      await pool.end();
+      logger.info('Database pool closed.');
+      process.exit(0);
+    });
+  } else {
+    const { pool } = require('./db');
+    await pool.end();
+    process.exit(0);
+  }
 });
 
 start();

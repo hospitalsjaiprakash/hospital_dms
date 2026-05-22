@@ -19,7 +19,7 @@ import Layout from './components/layout/Layout';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: 3,
       staleTime: 30000,
       refetchOnWindowFocus: false,
     },

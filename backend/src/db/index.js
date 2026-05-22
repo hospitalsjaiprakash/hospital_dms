@@ -13,7 +13,7 @@ const poolConfig = process.env.DATABASE_URL
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
   min: parseInt(process.env.DB_POOL_MIN || '2'),
-  max: parseInt(process.env.DB_POOL_MAX || '20'),
+  max: parseInt(process.env.DB_POOL_MAX || '50'),
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   statement_timeout: 20000,
