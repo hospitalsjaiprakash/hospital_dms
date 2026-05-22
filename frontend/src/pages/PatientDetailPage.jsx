@@ -284,9 +284,9 @@ function EditPatientModal({ patient, open, onClose }) {
       notes: patient.notes || '',
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status || 'none',
-      discharge_date: patient.discharge_date ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
-      pending_date: patient.pending_date ? new Date(new Date(patient.pending_date).getTime() - new Date(patient.pending_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
-      settlement_date: patient.settlement_date ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      discharge_date: (patient.hospital_status === 'discharged' && patient.discharge_date) ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      pending_date: (patient.settlement_status !== 'none' && patient.pending_date) ? new Date(new Date(patient.pending_date).getTime() - new Date(patient.pending_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      settlement_date: (patient.settlement_status === 'completed' && patient.settlement_date) ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
     }
   });
 
