@@ -92,7 +92,7 @@ export default function PatientsPage() {
   const patients = data?.data || [];
   const pagination = data?.pagination;
 
-  const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending');
+  const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged');
   const selectedIds = selectedPatients.map(p => p.id);
 
   // Tab-specific column visibility flags
@@ -149,6 +149,8 @@ export default function PatientsPage() {
       } else if (activeTab === 'pending') {
         actionData.settlement_status = 'completed';
         actionData.settlement_date = isoDate;
+      } else if (activeTab === 'discharged') {
+        actionData.settlement_status = 'pending';
       }
       await patientApi.bulkUpdate(actionData);
       setSelectedPatients([]);
@@ -204,8 +206,16 @@ export default function PatientsPage() {
                 size="sm"
                 onClick={openPreviewModal}
               >
-                <span className="hidden sm:inline">{activeTab === 'active' ? `Discharge Selected (${selectedPatients.length})` : `Settle Selected (${selectedPatients.length})`}</span>
-                <span className="sm:hidden">{activeTab === 'active' ? `Discharge (${selectedPatients.length})` : `Settle (${selectedPatients.length})`}</span>
+                <span className="hidden sm:inline">
+                  {activeTab === 'active' ? `Discharge Selected (${selectedPatients.length})` : 
+                   activeTab === 'discharged' ? `Mark Pending (${selectedPatients.length})` :
+                   `Settle Selected (${selectedPatients.length})`}
+                </span>
+                <span className="sm:hidden">
+                  {activeTab === 'active' ? `Discharge (${selectedPatients.length})` : 
+                   activeTab === 'discharged' ? `Pending (${selectedPatients.length})` :
+                   `Settle (${selectedPatients.length})`}
+                </span>
               </Button>
             </>
           )}
@@ -423,13 +433,19 @@ export default function PatientsPage() {
       <Modal open={showPreviewModal} onClose={() => setShowPreviewModal(false)} title="Confirm Bulk Action" maxWidth="max-w-lg">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            You are about to <strong>{activeTab === 'active' ? 'Discharge' : 'Settle PMJAY for'}</strong> the following {selectedPatients.length} patient{selectedPatients.length !== 1 && 's'}:
+            You are about to <strong>
+              {activeTab === 'active' ? 'Discharge' : 
+               activeTab === 'discharged' ? 'Mark as PMJAY Pending' : 
+               'Settle PMJAY for'}
+            </strong> the following {selectedPatients.length} patient{selectedPatients.length !== 1 && 's'}:
           </p>
 
           {/* Date & Time picker */}
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl space-y-1">
             <label className="block text-xs font-semibold text-blue-700 uppercase tracking-wide">
-              {activeTab === 'active' ? 'Discharge Date & Time' : 'Settlement Date & Time'}
+              {activeTab === 'active' ? 'Discharge Date & Time' : 
+               activeTab === 'discharged' ? 'Pending Date & Time' : 
+               'Settlement Date & Time'}
             </label>
             <input
               type="datetime-local"
@@ -469,7 +485,9 @@ export default function PatientsPage() {
           <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
             <Button variant="secondary" onClick={() => setShowPreviewModal(false)}>Cancel</Button>
             <Button variant="success" onClick={executeBulkAction} loading={isBulkUpdating}>
-              Confirm & {activeTab === 'active' ? 'Discharge' : 'Settle'}
+              Confirm & {activeTab === 'active' ? 'Discharge' : 
+                         activeTab === 'discharged' ? 'Mark Pending' : 
+                         'Settle'}
             </Button>
           </div>
         </div>
