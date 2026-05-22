@@ -95,18 +95,21 @@ export default function PatientsPage() {
   const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged');
   const selectedIds = selectedPatients.map(p => p.id);
 
-  // Tab-specific column visibility flags
   const showDischargeCol = activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled';
+  const showPendingCol = activeTab === 'pending' || activeTab === 'settled';
   const showSettlementCol = activeTab === 'settled';
 
-  // Dynamic grid: 14 cols for all/active, 15 for discharged/pending, 17 for settled
+  // Dynamic grid
   const gridStyle = showSettlementCol
-    ? 'repeat(17, minmax(0, 1fr))'
-    : showDischargeCol
-      ? 'repeat(15, minmax(0, 1fr))'
-      : 'repeat(14, minmax(0, 1fr))';
+    ? 'repeat(18, minmax(0, 1fr))'
+    : showPendingCol
+      ? 'repeat(17, minmax(0, 1fr))'
+      : showDischargeCol
+        ? 'repeat(15, minmax(0, 1fr))'
+        : 'repeat(14, minmax(0, 1fr))';
 
   const patientColSpan = showDischargeCol ? 'col-span-3' : 'col-span-4';
+  const uhidColSpan = showSettlementCol ? 'col-span-2' : 'col-span-3';
   const statusColSpan = 'col-span-2'; // always 2 — enough room for both badges
 
 
@@ -313,9 +316,10 @@ export default function PatientsPage() {
                 Patient
               </div>
               <div className="col-span-1">IP No</div>
-              <div className="col-span-3">UHID</div>
+              <div className={uhidColSpan}>UHID</div>
               <div className="col-span-2">Admitted</div>
               {showDischargeCol && <div className="col-span-2">Discharged</div>}
+              {showPendingCol && <div className="col-span-2">Pending</div>}
               {showSettlementCol && <div className="col-span-2">PMJAY Settled</div>}
               <div className={statusColSpan}>Status</div>
               <div className="col-span-1">Docs</div>
@@ -373,7 +377,7 @@ export default function PatientsPage() {
                   </div>
 
                   {/* UHID */}
-                  <div className="hidden sm:flex sm:col-span-3 items-center">
+                  <div className={`hidden sm:flex ${uhidColSpan} items-center`}>
                     <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-md">{patient.uhid}</span>
                   </div>
 
@@ -390,6 +394,20 @@ export default function PatientsPage() {
                         <>
                           <span className="text-xs font-semibold text-purple-700">{fmtDate(patient.discharge_date)}</span>
                           <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.discharge_date)}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pending Date (shown in pending / settled tabs) */}
+                  {showPendingCol && (
+                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                      {patient.pending_date ? (
+                        <>
+                          <span className="text-xs font-semibold text-amber-700">{fmtDate(patient.pending_date)}</span>
+                          <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.pending_date)}</span>
                         </>
                       ) : (
                         <span className="text-xs text-gray-400">—</span>
