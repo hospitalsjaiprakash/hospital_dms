@@ -20,7 +20,7 @@ export default function NewPatientPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { register, handleSubmit, control, formState: { errors }, setValue } = useForm();
+  const { register, handleSubmit, control, formState: { errors, isSubmitting }, setValue } = useForm();
 
   // Modal state for initial UHID/Name lookup
   const [showLookupModal, setShowLookupModal] = useState(true);
@@ -464,14 +464,14 @@ export default function NewPatientPage() {
                   variant="secondary"
                   type="button"
                   onClick={handleBackToModal}
-                  disabled={isCreating || isUploading}
+                  disabled={isCreating || isUploading || isSubmitting}
                   className="w-full sm:w-auto"
                 >
                   Back
                 </Button>
                 <Button
                   type="submit"
-                  loading={isCreating || isUploading}
+                  loading={isCreating || isUploading || isSubmitting}
                   className="w-full sm:w-auto"
                 >
                   {isUploading ? `Uploading ${docFiles.length} file(s)...` : (isReadmission ? 'Re-admit Patient' : 'Create Patient')}

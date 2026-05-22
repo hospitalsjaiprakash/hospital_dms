@@ -68,12 +68,12 @@ const schemas = {
 
   uploadDocument: Joi.object({
     patient_id: Joi.string().uuid().required(),
-    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'other').required(),
+    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'clinical_notes', 'surgery_notes', 'ot_notes', 'icu_master_chart', 'implant_invoice', 'justification', 'other').required(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 
   updateDocument: Joi.object({
-    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'other').optional(),
+    doc_type: Joi.string().valid('id_proof', 'ayushman_card', 'admission_photo', 'prescription', 'lab_reports', 'scans', 'discharge_summary', 'pre_op', 'post_op', 'intra_op', 'bedside', 'procedure', 'specimen', 'dressing', 'clinical_notes', 'surgery_notes', 'ot_notes', 'icu_master_chart', 'implant_invoice', 'justification', 'other').optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
 

@@ -23,8 +23,8 @@ const getEnv = (name) => {
   return null;
 };
 
-const VITE_URL = getEnv('VITE_API_URL');
-const BASE_URL = VITE_URL ? `${VITE_URL}/api` : 'https://hospital-dms-pyhq.onrender.com/api';
+const VITE_URL = getEnv('VITE_API_URL') || getEnv('REACT_APP_API_URL') || 'http://localhost:5000';
+const BASE_URL = `${VITE_URL}/api`;
 
 const api = axios.create({
   baseURL: BASE_URL,

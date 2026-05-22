@@ -5,7 +5,7 @@ import clsx from 'clsx';
 
 export default function AuthLayout({ children, reverse = false, backgroundImage }) {
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
+    <main className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
       {/* Background Image with Overlay */}
       {backgroundImage && (
         <div
@@ -94,6 +94,6 @@ export default function AuthLayout({ children, reverse = false, backgroundImage 
           </AnimatePresence>
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 }

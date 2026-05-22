@@ -50,7 +50,8 @@ const uploadDocument = async (req, res) => {
     return sendError(res, 'PDF file size exceeds 1MB limit', 400);
   }
 
-  const s3Key = generateS3Key(patient_id, doc_type, req.file.originalname);
+  const patientIdentifier = `${patient.uhid}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const s3Key = generateS3Key(patientIdentifier, doc_type, req.file.originalname);
   const { url } = await uploadToS3(fileBuffer, s3Key, req.file.mimetype, {
     patientId: patient_id,
     docType: doc_type,
@@ -154,8 +155,9 @@ const updateDocument = async (req, res) => {
   const { id } = req.params;
 
   const docRes = await db.query(
-    `SELECT d.*, u.role as uploader_role FROM documents d
+    `SELECT d.*, u.role as uploader_role, p.uhid as patient_uhid, p.name as patient_name FROM documents d
      JOIN users u ON u.id = d.uploaded_by
+     JOIN patients p ON p.id = d.patient_id
      WHERE d.id = $1 AND d.is_deleted = false`,
     [id]
   );
@@ -189,7 +191,8 @@ const updateDocument = async (req, res) => {
       return sendError(res, 'PDF file size exceeds 1MB limit', 400);
     }
 
-    newS3Key = generateS3Key(doc.patient_id, finalDocType, req.file.originalname);
+    const patientIdentifier = `${doc.patient_uhid}_${doc.patient_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    newS3Key = generateS3Key(patientIdentifier, finalDocType, req.file.originalname);
     const { url } = await uploadToS3(fileBuffer, newS3Key, req.file.mimetype, {
       patientId: doc.patient_id,
       docType: finalDocType,

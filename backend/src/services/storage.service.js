@@ -6,11 +6,12 @@ const crypto = require('crypto');
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'jphospital-dms-storage';
 
 const s3Client = new S3Client({
-  region: process.env.S3_REGION || 'auto',
+  region: process.env.S3_REGION || process.env.AWS_REGION || 'auto',
   endpoint: process.env.S3_ENDPOINT,
+  forcePathStyle: true,
   credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY_ID,
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
@@ -76,14 +77,14 @@ const deleteFromS3 = async (key) => {
   }
 };
 
-const generateS3Key = (patientId, docType, filename) => {
+const generateS3Key = (patientIdentifier, docType, filename) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const sanitized = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
   const uid = crypto.randomUUID();
   
-  return `documents/${year}/${month}/${patientId}/${docType}/${uid}-${sanitized}`;
+  return `documents/${year}/${month}/${patientIdentifier}/${docType}/${uid}-${sanitized}`;
 };
 
 module.exports = { uploadToS3, getPresignedUrl, deleteFromS3, generateS3Key };
