@@ -226,11 +226,23 @@ const updatePatient = async (req, res) => {
   // Set discharge_date if discharging (full ISO timestamp)
   if (updates.hospital_status === 'discharged' && current.hospital_status === 'active') {
     updates.discharge_date = updates.discharge_date || new Date().toISOString();
+  } else if (updates.hospital_status === 'active' && current.hospital_status === 'discharged') {
+    updates.discharge_date = null;
+    // Also revert settlement statuses since an active patient cannot be settled
+    updates.settlement_status = 'none';
+    updates.pending_date = null;
+    updates.settlement_date = null;
   }
 
   // Auto-set pending_date when marking as pending
   if (updates.settlement_status === 'pending' && current.settlement_status !== 'pending') {
     updates.pending_date = updates.pending_date || new Date().toISOString();
+    if (current.settlement_status === 'completed') {
+      updates.settlement_date = null;
+    }
+  } else if (updates.settlement_status === 'none' && current.settlement_status !== 'none') {
+    updates.pending_date = null;
+    updates.settlement_date = null;
   }
 
   // Auto-set settlement_date when marking as completed
@@ -282,11 +294,22 @@ const bulkUpdatePatients = async (req, res) => {
         // Set discharge_date (full timestamp) when bulk-discharging
         if (updates.hospital_status === 'discharged' && current.hospital_status === 'active') {
           updates.discharge_date = discharge_date || now;
+        } else if (updates.hospital_status === 'active' && current.hospital_status === 'discharged') {
+          updates.discharge_date = null;
+          updates.settlement_status = 'none';
+          updates.pending_date = null;
+          updates.settlement_date = null;
         }
 
         // Set pending_date when bulk-pending
         if (updates.settlement_status === 'pending' && current.settlement_status !== 'pending') {
           updates.pending_date = pending_date || now;
+          if (current.settlement_status === 'completed') {
+            updates.settlement_date = null;
+          }
+        } else if (updates.settlement_status === 'none' && current.settlement_status !== 'none') {
+          updates.pending_date = null;
+          updates.settlement_date = null;
         }
 
         // Set settlement_date when bulk-settling
