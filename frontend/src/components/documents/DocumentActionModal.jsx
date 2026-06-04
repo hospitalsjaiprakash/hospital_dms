@@ -26,11 +26,16 @@ export default function DocumentActionModal({ docId, open, onClose }) {
     { enabled: !!docId && open, retry: false }
   );
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, control, watch, formState: { errors } } = useForm();
+  const docType = watch('doc_type');
   
   React.useEffect(() => {
     if (data?.data) {
-      reset({ doc_type: data.data.doc_type, notes: data.data.notes || '' });
+      reset({ 
+        doc_type: data.data.doc_type, 
+        custom_file_name: '',
+        notes: data.data.notes || '' 
+      });
       setFile(null);
     }
   }, [data, reset, open]);
@@ -49,22 +54,34 @@ export default function DocumentActionModal({ docId, open, onClose }) {
   );
 
   const handleUpdate = (formData) => {
+    const customFileNameInput = formData.custom_file_name?.trim();
+    const effectiveNotes = formData.notes?.trim() || '';
+
     if (file) {
       const data = new FormData();
-      let fileName = file.file.name;
-      if (!fileName || fileName === 'blob' || fileName === 'image') {
-        const ext = file.type === 'pdf' ? 'pdf' : 'jpg';
-        fileName = `${formData.doc_type}_${Date.now()}.${ext}`;
-      } else if (!fileName.includes('.')) {
-        const ext = file.type === 'pdf' ? 'pdf' : 'jpg';
-        fileName = `${fileName}.${ext}`;
+      const ext = file.type === 'pdf' ? 'pdf' : 'jpg';
+      
+      let fileName;
+      if (formData.doc_type === 'other' && customFileNameInput) {
+        const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
+        fileName = `${sanitized}_${Date.now()}.${ext}`;
+      } else {
+        fileName = file.file.name;
+        if (!fileName || fileName === 'blob' || fileName === 'image') {
+          fileName = `${formData.doc_type}_${Date.now()}.${ext}`;
+        } else if (!fileName.includes('.')) {
+          fileName = `${fileName}.${ext}`;
+        }
       }
       data.append('file', file.file, fileName);
       data.append('doc_type', formData.doc_type);
-      if (formData.notes) data.append('notes', formData.notes);
+      if (effectiveNotes) data.append('notes', effectiveNotes);
       updateDoc(data);
     } else {
-      updateDoc(formData);
+      updateDoc({
+        doc_type: formData.doc_type,
+        notes: effectiveNotes
+      });
     }
   };
 
@@ -106,30 +123,15 @@ export default function DocumentActionModal({ docId, open, onClose }) {
   const hasEditPermission = canEdit(doc.uploaded_by, doc.uploader_role);
 
   const handleDownload = () => {
-    if (!doc.presigned_url) {
+    const downloadUrl = doc.download_url || doc.presigned_url;
+    if (!downloadUrl) {
       toast.error('File not available');
       return;
     }
     
-    let downloadName = doc.file_name || 'document';
-    if (downloadName === 'blob' || downloadName === 'image') {
-      downloadName = `${DOC_TYPE_LABELS[doc.doc_type] || 'document'}_${new Date(doc.created_at).getTime()}`;
-    }
-    
-    if (!downloadName.includes('.')) {
-      if (doc.mime_type === 'application/pdf') downloadName += '.pdf';
-      else if (doc.mime_type === 'image/jpeg') downloadName += '.jpg';
-      else if (doc.mime_type === 'image/png') downloadName += '.png';
-      else downloadName += '.jpg';
-    }
-
-    const downloadUrl = doc.presigned_url.includes('?') 
-      ? `${doc.presigned_url}&download=${encodeURIComponent(downloadName)}` 
-      : `${doc.presigned_url}?download=${encodeURIComponent(downloadName)}`;
-
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = downloadName;
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -202,39 +204,55 @@ export default function DocumentActionModal({ docId, open, onClose }) {
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Replace Document File (Optional)</label>
                   <CameraFileUploader file={file} onChange={setFile} disabled={updating} />
                 </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
-                  <Controller
-                    name="doc_type"
-                    control={control}
-                    rules={{ required: 'Please select document type' }}
-                    render={({ field }) => {
-                      const options = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-                      return (
-                        <ReactSelect
-                          {...field}
-                          options={options}
-                          value={options.find(c => c.value === field.value) || null}
-                          onChange={val => field.onChange(val.value)}
-                          placeholder="Search or select type..."
-                          className="text-sm"
-                          menuPortalTarget={document.body}
-                          styles={{
-                            control: (base, state) => ({
-                              ...base,
-                              borderColor: errors?.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
-                              borderRadius: '0.5rem',
-                              minHeight: '42px',
-                              boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
-                              '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
-                            }),
-                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                          }}
-                        />
-                      );
-                    }}
-                  />
-                  {errors?.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                    <Controller
+                      name="doc_type"
+                      control={control}
+                      rules={{ required: 'Please select document type' }}
+                      render={({ field }) => {
+                        const options = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+                        return (
+                          <ReactSelect
+                            {...field}
+                            options={options}
+                            value={options.find(c => c.value === field.value) || null}
+                            onChange={val => field.onChange(val.value)}
+                            placeholder="Search or select type..."
+                            className="text-sm"
+                            menuPortalTarget={document.body}
+                            styles={{
+                              control: (base, state) => ({
+                                ...base,
+                                borderColor: errors?.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                                borderRadius: '0.5rem',
+                                minHeight: '42px',
+                                boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                                '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                              }),
+                              menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                            }}
+                          />
+                        );
+                      }}
+                    />
+                    {errors?.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                  </div>
+
+                  {docType === 'other' && file && (
+                    <div className="space-y-1 animate-fade-in">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Rename File / Custom File Name</label>
+                      <input
+                        placeholder="Enter custom file name (optional)..."
+                        className={clsx(
+                          "w-full rounded-lg border px-3 py-2 min-h-[42px] text-sm focus:ring-2 focus:border-transparent outline-none transition-colors",
+                          errors.custom_file_name ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                        )}
+                        {...register('custom_file_name')}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1">

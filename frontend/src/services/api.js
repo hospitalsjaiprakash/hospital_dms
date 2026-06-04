@@ -23,12 +23,11 @@ const getEnv = (name) => {
   return null;
 };
 
-const VITE_URL = getEnv('VITE_API_URL') || getEnv('REACT_APP_API_URL') || 'http://localhost:5000';
-const BASE_URL = `${VITE_URL}/api`;
+const BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 300000, // 5 minutes for large file uploads/compression
 });
 
 // Request interceptor - attach token
@@ -49,7 +48,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       sessionStorage.removeItem('hms_token');
       sessionStorage.removeItem('hms_user');
-      window.location.href = '/login';
+      // Completely removed redirect here just in case it's causing a refresh loop
     }
     
     // Check for detailed validation errors (backend uses 'errors' key)
@@ -72,11 +71,12 @@ export const authApi = {
 
 // ── Patients ──────────────────────────────────────────────────────────────────
 export const patientApi = {
+  getDashboardData: () => api.get('/dashboard-data'),
   getAll: (params) => api.get('/patients', { params }),
   getOne: (id) => api.get(`/patients/${id}`),
   create: (data) => api.post('/patients', data),
-  update: (id, data) => api.patch(`/patients/${id}`, data),
-  delete: (id) => api.delete(`/patients/${id}`),
+  update: (id, data) => api.post(`/patients/${id}`, data),
+  delete: (id) => api.post(`/patients/${id}/delete`),
   bulkUpdate: (data) => api.post('/patients/bulk', data),
   getStats: () => api.get('/patients/stats'),
   getUploadHistory: () => api.get('/patients/upload-history'),
@@ -86,24 +86,34 @@ export const patientApi = {
 // ── Documents ─────────────────────────────────────────────────────────────────
 export const documentApi = {
   getAll: (params) => api.get('/documents', { params }),
-  upload: (formData) => api.post('/documents', formData, {
+  upload: (formData, onProgress) => api.post('/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
+    timeout: 600000,
+    onUploadProgress: onProgress,
   }),
   getForPatient: (patientId, params) => api.get(`/patients/${patientId}/documents`, { params }),
   getOne: (id) => api.get(`/documents/${id}`),
-  update: (id, data) => api.patch(`/documents/${id}`, data),
-  delete: (id) => api.delete(`/documents/${id}`),
+  update: (id, data, onProgress) => {
+    const isMultipart = data instanceof FormData;
+    return api.post(`/documents/${id}`, data, {
+      headers: isMultipart ? { 'Content-Type': 'multipart/form-data' } : {},
+      timeout: 600000,
+      onUploadProgress: onProgress,
+    });
+  },
+  delete: (id) => api.post(`/documents/${id}/delete`),
   bulkDelete: (ids) => api.post('/documents/bulk-delete', { ids }),
   exportZip: (patientId) => api.get(`/patients/${patientId}/documents/export`, { responseType: 'blob' }),
+  downloadRaw: (id) => api.get(`/documents/${id}/download-raw`, { responseType: 'blob' }),
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 export const userApi = {
   getAll: (params) => api.get('/users', { params }),
   create: (data) => api.post('/users', data),
-  toggleStatus: (id) => api.patch(`/users/${id}/status`),
-  delete: (id) => api.delete(`/users/${id}`),
+  toggleStatus: (id) => api.post(`/users/${id}/status`),
+  delete: (id) => api.post(`/users/${id}/delete`),
+  syncGSheet: () => api.post('/users/sync-gsheet'),
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

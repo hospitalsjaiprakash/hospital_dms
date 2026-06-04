@@ -7,7 +7,7 @@ import { StatCard, Card, Badge, Spinner, Modal } from '../components/common';
 import {
   Users, FileText, Clock, CheckCircle, UserCheck,
   TrendingUp, AlertCircle, Plus, ChevronRight, BadgeCheck,
-  BarChart2, X
+  BarChart2, X, Send
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -17,7 +17,9 @@ import {
 
 const STATUS_COLORS = {
   active: 'green', discharged: 'blue',
+  document_submission: 'indigo',
   pending: 'amber', completed: 'green',
+  none: 'gray',
 };
 
 const MONTH_COLORS = [
@@ -98,17 +100,18 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  const { data: statsData, isLoading: statsLoading } = useQuery('stats', patientApi.getStats, { refetchInterval: 60000 });
-  const { data: recentData } = useQuery(['patients', 'recent'], () => patientApi.getAll({ limit: 8, page: 1 }), { refetchInterval: 30000 });
-  const { data: historyData, isLoading: historyLoading } = useQuery(
-    'uploadHistory',
-    patientApi.getUploadHistory,
+  const { data: dashboardData, isLoading: dashboardLoading } = useQuery(
+    'dashboardData',
+    patientApi.getDashboardData,
     { refetchInterval: 60000 }
   );
 
-  const stats = statsData?.data;
-  const recentPatients = recentData?.data || [];
-  const history = historyData?.data;
+  const stats = dashboardData?.data?.stats;
+  const recentPatients = dashboardData?.data?.recentPatients || [];
+  const history = dashboardData?.data?.uploadHistory;
+  
+  const statsLoading = dashboardLoading;
+  const historyLoading = dashboardLoading;
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -138,7 +141,7 @@ export default function DashboardPage() {
       {statsLoading ? (
         <div className="flex justify-center py-8"><Spinner /></div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 sm:gap-4">
           <Link to="/patients" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Total Patients" value={stats?.total_patients} icon={Users} color="blue" className="h-full" />
           </Link>
@@ -147,6 +150,9 @@ export default function DashboardPage() {
           </Link>
           <Link to="/patients?tab=discharged" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Discharged" value={stats?.discharged_patients} icon={CheckCircle} color="purple" className="h-full" />
+          </Link>
+          <Link to="/patients?tab=document_submission" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
+            <StatCard title="Doc Submission" value={stats?.document_submission_patients} icon={Send} color="indigo" className="h-full" />
           </Link>
           <Link to="/patients?tab=pending" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="PMJAY Pending" value={stats?.pending_settlement} icon={Clock} color="red" className="h-full" />
@@ -234,8 +240,10 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
                   <Badge variant={STATUS_COLORS[patient.hospital_status]}>{patient.hospital_status}</Badge>
-                  {patient.hospital_status === 'discharged' && (
-                    <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">{patient.settlement_status}</Badge>
+                  {patient.hospital_status === 'discharged' && patient.settlement_status && patient.settlement_status !== 'none' && (
+                    <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">
+                      {patient.settlement_status === 'document_submission' ? 'doc submission' : patient.settlement_status}
+                    </Badge>
                   )}
                 </div>
                 <div className="text-right flex-shrink-0 hidden sm:block">

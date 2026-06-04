@@ -18,7 +18,7 @@ export default function SignupPage() {
     try {
       await signup(data);
       toast.success('Account created. Pending admin approval.');
-      navigate('/login');
+      navigate('/login', { replace: true });
     } catch (err) {
       toast.error(err.message || 'Signup failed');
     }

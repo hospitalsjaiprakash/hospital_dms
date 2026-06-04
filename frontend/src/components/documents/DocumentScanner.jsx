@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Camera, X, Check, ArrowRight, RotateCw,
   Trash2, ChevronLeft, ChevronRight, FileText, Scan, ZoomIn, GripVertical,
-  Eye, EyeOff, ArrowLeftRight
+  Eye, EyeOff, ArrowLeftRight, Zap, ZapOff
 } from 'lucide-react';
 import { Button } from '../common';
 import toast from 'react-hot-toast';
@@ -66,6 +66,247 @@ function applyPerspectiveTransformCV(cv, srcCanvas, points, targetWidth, targetH
   dstTri.delete();
 
   return dstCanvas;
+}
+
+/**
+ * Order 4 points as [top-left, top-right, bottom-right, bottom-left]
+ * using sum (x+y) and difference (x-y) — mathematically robust.
+ */
+function orderPoints(pts) {
+  if (pts.length !== 4) return null;
+  const sums = pts.map(p => p.x + p.y);
+  const diffs = pts.map(p => p.x - p.y);
+  const tlIdx = sums.indexOf(Math.min(...sums));
+  const brIdx = sums.indexOf(Math.max(...sums));
+  const trIdx = diffs.indexOf(Math.max(...diffs));
+  const blIdx = diffs.indexOf(Math.min(...diffs));
+  if (new Set([tlIdx, brIdx, trIdx, blIdx]).size !== 4) return null;
+  return [pts[tlIdx], pts[trIdx], pts[brIdx], pts[blIdx]];
+}
+
+/**
+ * Extract the best quadrilateral from a set of contours.
+ * Tries multiple epsilon values for approxPolyDP + convex hull fallback.
+ */
+function findBestQuadInContours(cv, contours, imgW, imgH) {
+  const frameArea = imgW * imgH;
+  const minArea = frameArea * 0.04;
+  const epsilons = [0.02, 0.03, 0.04, 0.06, 0.08];
+  let best = null;
+
+  for (let i = 0; i < contours.size(); i++) {
+    const cnt = contours.get(i);
+    const area = cv.contourArea(cnt);
+    if (area < minArea) continue;
+
+    // Try multiple epsilon values
+    for (const eps of epsilons) {
+      const peri = cv.arcLength(cnt, true);
+      const approx = new cv.Mat();
+      cv.approxPolyDP(cnt, approx, eps * peri, true);
+      if (approx.rows === 4 && cv.isContourConvex(approx)) {
+        const pts = [];
+        for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
+        const ordered = orderPoints(pts);
+        if (ordered) {
+          const score = area / frameArea;
+          if (!best || score > best.score) best = { points: ordered, score, area };
+        }
+      }
+      approx.delete();
+    }
+
+    // Convex hull fallback for large irregular contours
+    if (area > minArea * 2) {
+      const hull = new cv.Mat();
+      cv.convexHull(cnt, hull);
+      if (hull.rows >= 4) {
+        for (const eps of [0.05, 0.08, 0.10]) {
+          const peri = cv.arcLength(hull, true);
+          const approx = new cv.Mat();
+          cv.approxPolyDP(hull, approx, eps * peri, true);
+          if (approx.rows === 4 && cv.isContourConvex(approx)) {
+            const pts = [];
+            for (let j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
+            const ordered = orderPoints(pts);
+            if (ordered) {
+              const score = (area / frameArea) * 0.8;
+              if (!best || score > best.score) best = { points: ordered, score, area };
+            }
+          }
+          approx.delete();
+        }
+      }
+      hull.delete();
+    }
+  }
+  return best;
+}
+
+/** Helper to safely run a detection strategy and collect results. */
+function runStrategy(fn, allResults) {
+  try { const r = fn(); if (r) allResults.push(r); } catch (e) { console.warn('Edge strategy failed:', e); }
+}
+
+/**
+ * Multi-strategy document edge detection pipeline (Professional Macro-Detection).
+ * Returns { points, score, confidence } or null.
+ */
+function detectDocumentEdges(cv, canvas, w, h) {
+  let src = null, smallSrc = null, paddedSrc = null, gray = null;
+  const allResults = [];
+  const maxDim = 500;
+  let scale = 1;
+  const PAD = 10; // 10px artificial boundary padding
+
+  try {
+    src = cv.imread(canvas);
+    
+    // 1. Professional Macro-Detection Downscaling
+    // By shrinking the image, we destroy micro-noise (text, wood grain)
+    // and keep only the strong outer paper boundaries.
+    scale = Math.max(w, h) / maxDim;
+    if (scale < 1) scale = 1;
+    
+    const smallW = Math.round(w / scale);
+    const smallH = Math.round(h / scale);
+    
+    smallSrc = new cv.Mat();
+    cv.resize(src, smallSrc, new cv.Size(smallW, smallH), 0, 0, cv.INTER_AREA);
+    
+    // 2. Artificial Boundary Padding
+    // This forces documents touching the edge of the screen to form closed contours.
+    paddedSrc = new cv.Mat();
+    cv.copyMakeBorder(smallSrc, paddedSrc, PAD, PAD, PAD, PAD, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+    
+    gray = new cv.Mat();
+    cv.cvtColor(paddedSrc, gray, cv.COLOR_RGBA2GRAY);
+
+    const paddedW = smallW + (PAD * 2);
+    const paddedH = smallH + (PAD * 2);
+
+    // Strategy 1: Adaptive Threshold + Morphological Close (best for uneven lighting)
+    runStrategy(() => {
+      const blur = new cv.Mat(), thresh = new cv.Mat(), morphed = new cv.Mat();
+      const c1 = new cv.MatVector(), h1 = new cv.Mat();
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      cv.adaptiveThreshold(blur, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
+      const k1 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+      cv.morphologyEx(thresh, morphed, cv.MORPH_CLOSE, k1);
+      cv.findContours(morphed, c1, h1, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      const r = findBestQuadInContours(cv, c1, paddedW, paddedH);
+      blur.delete(); thresh.delete(); morphed.delete(); k1.delete(); c1.delete(); h1.delete();
+      return r;
+    }, allResults);
+
+    // Strategy 2: Multi-threshold Canny + Dilate (varying contrast)
+    for (const [lo, hi] of [[20, 80], [30, 130], [50, 200], [75, 300]]) {
+      runStrategy(() => {
+        const blur = new cv.Mat(), edges = new cv.Mat(), dil = new cv.Mat();
+        const c2 = new cv.MatVector(), h2 = new cv.Mat();
+        cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+        cv.Canny(blur, edges, lo, hi);
+        const k2 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+        cv.dilate(edges, dil, k2, new cv.Point(-1, -1), 1);
+        cv.findContours(dil, c2, h2, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+        const r = findBestQuadInContours(cv, c2, paddedW, paddedH);
+        blur.delete(); edges.delete(); dil.delete(); k2.delete(); c2.delete(); h2.delete();
+        return r;
+      }, allResults);
+    }
+
+    // Strategy 3: OTSU Threshold (good for high-contrast docs)
+    runStrategy(() => {
+      const blur = new cv.Mat(), otsu = new cv.Mat(), morphed = new cv.Mat();
+      const c3 = new cv.MatVector(), h3 = new cv.Mat();
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      cv.threshold(blur, otsu, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      const k3 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+      cv.morphologyEx(otsu, morphed, cv.MORPH_CLOSE, k3);
+      cv.findContours(morphed, c3, h3, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      const r = findBestQuadInContours(cv, c3, paddedW, paddedH);
+      blur.delete(); otsu.delete(); morphed.delete(); k3.delete(); c3.delete(); h3.delete();
+      return r;
+    }, allResults);
+
+    // Strategy 4: Heavy Blur + OTSU (Harsh Shadow Fallback)
+    runStrategy(() => {
+      const blur = new cv.Mat(), thresh = new cv.Mat(), dil = new cv.Mat(), ero = new cv.Mat();
+      const c4 = new cv.MatVector(), h4 = new cv.Mat();
+      // Massive blur to merge the white paper and ignore the shadow
+      cv.GaussianBlur(gray, blur, new cv.Size(21, 21), 0);
+      cv.threshold(blur, thresh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      const k4 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(15, 15));
+      cv.dilate(thresh, dil, k4, new cv.Point(-1, -1), 1);
+      cv.erode(dil, ero, k4, new cv.Point(-1, -1), 1);
+      cv.findContours(ero, c4, h4, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      const r = findBestQuadInContours(cv, c4, paddedW, paddedH);
+      blur.delete(); thresh.delete(); dil.delete(); ero.delete(); k4.delete(); c4.delete(); h4.delete();
+      return r;
+    }, allResults);
+
+  } finally {
+    if (src) src.delete();
+    if (smallSrc) smallSrc.delete();
+    if (paddedSrc) paddedSrc.delete();
+    if (gray) gray.delete();
+  }
+
+  if (allResults.length === 0) return null;
+  
+  // Sort and select the best quad based on our scoring mechanism
+  allResults.sort((a, b) => b.score - a.score);
+  const best = allResults[0];
+  
+  // Remove the padding and scale the detected points back to original high-res size
+  const upscaledPoints = best.points.map(p => {
+    // Subtract padding and clamp to ensure we don't go out of original bounds
+    let adjustedX = p.x - PAD;
+    let adjustedY = p.y - PAD;
+    
+    // Convert back to original scale
+    let finalX = adjustedX * scale;
+    let finalY = adjustedY * scale;
+    
+    return {
+      x: Math.max(0, Math.min(w, finalX)),
+      y: Math.max(0, Math.min(h, finalY))
+    };
+  });
+  
+  // Calculate confidence based on the area of the document relative to the small frame
+  const confidence = (best.area / ((w/scale) * (h/scale))) > 0.25 ? 'high' : 'medium';
+  
+  return {
+    points: upscaledPoints,
+    score: best.score,
+    confidence
+  };
+}
+
+/**
+ * Post-process a cropped document canvas: brightness/contrast + sharpening.
+ */
+function enhanceCroppedDocument(cv, canvas) {
+  let enhanced = null, adjusted = null, sharpened = null, kernel = null;
+  try {
+    enhanced = cv.imread(canvas);
+    adjusted = new cv.Mat();
+    enhanced.convertTo(adjusted, -1, 1.15, 8); // Slight brightness/contrast boost
+
+    sharpened = new cv.Mat();
+    kernel = cv.matFromArray(3, 3, cv.CV_32FC1, [0, -1, 0, -1, 5, -1, 0, -1, 0]);
+    cv.filter2D(adjusted, sharpened, -1, kernel, new cv.Point(-1, -1), 0, cv.BORDER_DEFAULT);
+
+    cv.imshow(canvas, sharpened);
+  } catch (e) {
+    console.warn('Post-processing enhancement failed:', e);
+  } finally {
+    if (enhanced) enhanced.delete();
+    if (adjusted) adjusted.delete();
+    if (sharpened) sharpened.delete();
+    if (kernel) kernel.delete();
+  }
 }
 
 // ── Sortable Item Component for Review Grid ──────────────────────────────────
@@ -137,7 +378,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
   const [isDraggingHandle, setIsDraggingHandle] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [previewSide, setPreviewSide] = useState('right'); // 'right' | 'left'
-  const [autoDetected, setAutoDetected] = useState(false); // true when OpenCV found document edges
+  const [autoDetected, setAutoDetected] = useState(false); // false | 'high' | 'medium' — detection confidence
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   // ── Camera refs ─────────────────────────────────────────────────────────────
   const videoRef = useRef(null);
@@ -146,6 +389,9 @@ export default function DocumentScanner({ onComplete, onClose }) {
   // ── Crop drag refs (all hooks at top level) ─────────────────────────────────
   const cropContainerRef = useRef(null);
   const draggingIdxRef = useRef(null);
+  const dragStartRef = useRef(null);
+  const dragPointsStartRef = useRef(null);
+  const lastMousePtRef = useRef(null);
 
   // ── OpenCV initialization ───────────────────────────────────────────────────
   useEffect(() => {
@@ -185,6 +431,18 @@ export default function DocumentScanner({ onComplete, onClose }) {
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
+
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        try {
+          const capabilities = track.getCapabilities();
+          if (capabilities.torch) {
+            setHasTorch(true);
+          }
+        } catch (e) {
+          // getCapabilities might not be supported
+        }
+      }
     } catch {
       toast.error('Camera access denied');
       onClose();
@@ -197,10 +455,27 @@ export default function DocumentScanner({ onComplete, onClose }) {
     streamRef.current = null;
   };
 
+  const toggleTorch = async () => {
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (track) {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
+        setTorchOn(!torchOn);
+      } catch (err) {
+        console.error("Torch error", err);
+      }
+    }
+  };
+
   // ── Capture & Auto-detect Edges ─────────────────────────────────────────────
   const capturePhoto = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
+    if (pages.length >= 20) {
+      toast.error('Maximum 20 pages allowed per scan');
+      return;
+    }
 
     setFlash(true);
     setTimeout(() => setFlash(false), 250);
@@ -218,7 +493,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
       
       setCurrentOriginal({ blob, url, width: w, height: h });
       
-      // Default crop if CV fails
+      // Default crop corners (fallback if detection fails)
       let bestPoints = [
         { x: w * 0.1, y: h * 0.1 },
         { x: w * 0.9, y: h * 0.1 },
@@ -226,73 +501,17 @@ export default function DocumentScanner({ onComplete, onClose }) {
         { x: w * 0.1, y: h * 0.9 },
       ];
 
-      // Auto edge detection if OpenCV is loaded
+      // Multi-strategy auto edge detection
       if (cvReady && window.cv) {
         try {
-          const cv = window.cv;
-          let src = cv.imread(canvas);
-          let gray = new cv.Mat();
-          let blur = new cv.Mat();
-          let edges = new cv.Mat();
-          
-          cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-          cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-          cv.Canny(blur, edges, 75, 200);
-
-          let contours = new cv.MatVector();
-          let hierarchy = new cv.Mat();
-          cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-          // Find largest quadrilateral
-          let maxArea = 0;
-          let bestContour = null;
-
-          for (let i = 0; i < contours.size(); ++i) {
-            let cnt = contours.get(i);
-            let area = cv.contourArea(cnt);
-            if (area > 50000) { // minimum area threshold
-              let peri = cv.arcLength(cnt, true);
-              let approx = new cv.Mat();
-              cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-              
-              if (approx.rows === 4 && area > maxArea) {
-                maxArea = area;
-                if (bestContour) bestContour.delete();
-                bestContour = approx.clone();
-              }
-              approx.delete();
-            }
+          const result = detectDocumentEdges(window.cv, canvas, w, h);
+          if (result && result.points) {
+            bestPoints = result.points;
+            setAutoDetected(result.confidence || 'medium');
+            console.log(`Document detected (confidence: ${result.confidence}, score: ${(result.score * 100).toFixed(1)}%)`);
           }
-
-          if (bestContour) {
-            // Convert to array and sort points: top-left, top-right, bottom-right, bottom-left
-            const pts = [];
-            for (let i = 0; i < 4; i++) {
-              pts.push({
-                x: bestContour.data32S[i * 2],
-                y: bestContour.data32S[i * 2 + 1]
-              });
-            }
-            
-            // Order points
-            const center = pts.reduce((acc, p) => ({ x: acc.x + p.x / 4, y: acc.y + p.y / 4 }), { x: 0, y: 0 });
-            const tl = pts.find(p => p.x < center.x && p.y < center.y);
-            const tr = pts.find(p => p.x > center.x && p.y < center.y);
-            const br = pts.find(p => p.x > center.x && p.y > center.y);
-            const bl = pts.find(p => p.x < center.x && p.y > center.y);
-
-            // Only use if we successfully identified all 4 corners logically
-            if (tl && tr && br && bl) {
-               bestPoints = [tl, tr, br, bl];
-               setAutoDetected(true);
-            }
-            bestContour.delete();
-          }
-
-          src.delete(); gray.delete(); blur.delete(); edges.delete();
-          contours.delete(); hierarchy.delete();
         } catch (e) {
-          console.error("OpenCV Auto-crop failed, falling back to default", e);
+          console.error('OpenCV Auto-crop failed, falling back to default', e);
         }
       }
 
@@ -313,18 +532,56 @@ export default function DocumentScanner({ onComplete, onClose }) {
     };
   }, [currentOriginal]);
 
+  const handleDragMove = useCallback((pt, clientX, clientY) => {
+    if (typeof draggingIdxRef.current === 'number') {
+      setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
+    } else {
+      const prevMousePt = lastMousePtRef.current;
+      if (prevMousePt) {
+        const dx = pt.x - prevMousePt.x;
+        const dy = pt.y - prevMousePt.y;
+        setPoints(prev => {
+          const n = [...prev];
+          if (draggingIdxRef.current === 'left') {
+            n[3] = { ...n[3], x: n[3].x + dx };
+            n[0] = { ...n[0], x: n[0].x + dx };
+          } else if (draggingIdxRef.current === 'right') {
+            n[1] = { ...n[1], x: n[1].x + dx };
+            n[2] = { ...n[2], x: n[2].x + dx };
+          } else if (draggingIdxRef.current === 'top') {
+            n[0] = { ...n[0], y: n[0].y + dy };
+            n[1] = { ...n[1], y: n[1].y + dy };
+          } else if (draggingIdxRef.current === 'bottom') {
+            n[2] = { ...n[2], y: n[2].y + dy };
+            n[3] = { ...n[3], y: n[3].y + dy };
+          }
+          const clamp = (p) => ({
+             x: Math.max(0, Math.min(currentOriginal.width, p.x)),
+             y: Math.max(0, Math.min(currentOriginal.height, p.y))
+          });
+          return n.map(clamp);
+        });
+        lastMousePtRef.current = pt;
+      }
+    }
+    setMagnifier({ x: clientX, y: clientY, ptX: pt.x, ptY: pt.y });
+  }, [currentOriginal]);
+
   const onMouseDown = (e, idx) => { 
     e.preventDefault(); 
-    draggingIdxRef.current = idx; 
+    draggingIdxRef.current = idx;
+    const pt = getRelativePoint(e.clientX, e.clientY);
+    dragStartRef.current = pt;
+    dragPointsStartRef.current = [...points];
+    lastMousePtRef.current = pt;
     setIsDraggingHandle(true); 
   };
   const onMouseMove = useCallback((e) => {
     if (draggingIdxRef.current === null) return;
     const pt = getRelativePoint(e.clientX, e.clientY);
     if (!pt) return;
-    setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
-    setMagnifier({ x: e.clientX, y: e.clientY, ptX: pt.x, ptY: pt.y });
-  }, [getRelativePoint]);
+    handleDragMove(pt, e.clientX, e.clientY);
+  }, [getRelativePoint, handleDragMove]);
   const onMouseUp = () => { 
     draggingIdxRef.current = null; 
     setMagnifier(null); 
@@ -333,7 +590,12 @@ export default function DocumentScanner({ onComplete, onClose }) {
 
   const onTouchStart = (e, idx) => { 
     e.preventDefault(); 
-    draggingIdxRef.current = idx; 
+    draggingIdxRef.current = idx;
+    const t = e.touches[0];
+    const pt = getRelativePoint(t.clientX, t.clientY);
+    dragStartRef.current = pt;
+    dragPointsStartRef.current = [...points];
+    lastMousePtRef.current = pt;
     setIsDraggingHandle(true); 
   };
   const onTouchMove = useCallback((e) => {
@@ -341,9 +603,8 @@ export default function DocumentScanner({ onComplete, onClose }) {
     const t = e.touches[0];
     const pt = getRelativePoint(t.clientX, t.clientY);
     if (!pt) return;
-    setPoints(prev => { const n = [...prev]; n[draggingIdxRef.current] = pt; return n; });
-    setMagnifier({ x: t.clientX, y: t.clientY, ptX: pt.x, ptY: pt.y });
-  }, [getRelativePoint]);
+    handleDragMove(pt, t.clientX, t.clientY);
+  }, [getRelativePoint, handleDragMove]);
   const onTouchEnd = () => { 
     draggingIdxRef.current = null; 
     setMagnifier(null); 
@@ -385,6 +646,8 @@ export default function DocumentScanner({ onComplete, onClose }) {
       let dstCanvas;
       if (cvReady && window.cv) {
         dstCanvas = applyPerspectiveTransformCV(window.cv, srcCanvas, points, targetW, targetH);
+        // Post-processing: enhance brightness/contrast + sharpen text
+        enhanceCroppedDocument(window.cv, dstCanvas);
       } else {
         dstCanvas = document.createElement('canvas');
         dstCanvas.width = targetW; dstCanvas.height = targetH;
@@ -504,16 +767,17 @@ export default function DocumentScanner({ onComplete, onClose }) {
         });
       };
 
-      // Quality scale levels to step down until the PDF fits under 1.5MB
+      // Quality scale levels to step down until the PDF fits under 1MB
       const qualityLevels = [
         { qual: 0.85, dim: 1600 }, // High quality
         { qual: 0.70, dim: 1200 }, // Medium quality
         { qual: 0.55, dim: 1000 }, // Low quality
-        { qual: 0.40, dim: 800 }   // Super compressed (very readable for documents)
+        { qual: 0.40, dim: 800 },  // Super compressed (very readable for documents)
+        { qual: 0.30, dim: 600 }   // Extreme compression (ensures 10+ pages fit under 1MB)
       ];
 
       let pdfBlob = null;
-      const targetMax = 1.5 * 1024 * 1024; // 1.5MB
+      const targetMax = 1.95 * 1024 * 1024; // 1.95MB to guarantee < 2MB
 
       for (let levelIndex = 0; levelIndex < qualityLevels.length; levelIndex++) {
         const { qual, dim } = qualityLevels[levelIndex];
@@ -585,6 +849,15 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         )}
 
+        {hasTorch && videoReady && (
+          <button 
+            type="button" onClick={toggleTorch}
+            className="absolute right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20 z-40"
+            style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+          >
+            {torchOn ? <Zap size={20} className="text-yellow-400" fill="currentColor" /> : <ZapOff size={20} />}
+          </button>
+        )}
 
       </div>
 
@@ -647,14 +920,21 @@ export default function DocumentScanner({ onComplete, onClose }) {
             <div className="flex items-center gap-2">
               <span className="text-white font-bold text-sm">✂️ Adjust Crop</span>
               {autoDetected && (
-                <span className="flex items-center gap-1 bg-green-500/20 border border-green-400/40 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                  Auto Detected
+                <span className={clsx(
+                  "flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse",
+                  autoDetected === 'high'
+                    ? "bg-green-500/20 border border-green-400/40 text-green-300"
+                    : "bg-amber-500/20 border border-amber-400/40 text-amber-300"
+                )}>
+                  <span className={clsx("w-1.5 h-1.5 rounded-full", autoDetected === 'high' ? "bg-green-400" : "bg-amber-400")}></span>
+                  {autoDetected === 'high' ? 'Auto Detected' : 'Auto Detected — Adjust'}
                 </span>
               )}
             </div>
             <span className="text-[10px] text-gray-400">
-              {autoDetected ? 'Document found — drag corners to refine' : 'Drag corners to select document area'}
+              {autoDetected === 'high' ? 'Document found — drag corners to refine' 
+               : autoDetected ? 'Edges detected — verify and adjust corners if needed'
+               : 'Drag corners to select document area'}
             </span>
           </div>
           <div className="w-8" />
@@ -684,11 +964,19 @@ export default function DocumentScanner({ onComplete, onClose }) {
           </div>
         )}
 
-        <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-4">
+        <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-6 sm:p-8">
           <div
             ref={cropContainerRef}
-            className="relative select-none"
-            style={{ maxHeight: '100%', maxWidth: '100%', aspectRatio: `${iw}/${ih}`, cursor: 'crosshair' }}
+            className="relative select-none flex-shrink-0"
+            style={{ 
+              width: iw >= ih ? '100%' : 'auto',
+              height: ih > iw ? '100%' : 'auto',
+              maxHeight: '100%', 
+              maxWidth: '100%', 
+              aspectRatio: `${iw}/${ih}`, 
+              cursor: 'crosshair',
+              margin: 'auto'
+            }}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onMouseLeave={onMouseUp}
@@ -774,6 +1062,44 @@ export default function DocumentScanner({ onComplete, onClose }) {
                     />
                   </g>
                 ))}
+                
+                {/* Edge drag handles (Left, Right, Top, and Bottom) */}
+                {[
+                  {id: 'left', p1: 3, p2: 0}, 
+                  {id: 'right', p1: 1, p2: 2},
+                  {id: 'top', p1: 0, p2: 1},
+                  {id: 'bottom', p1: 2, p2: 3}
+                ].map(edge => {
+                  const p1 = points[edge.p1];
+                  const p2 = points[edge.p2];
+                  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                  return (
+                    <g key={`handle-${edge.id}`}>
+                      <circle
+                        cx={mid.x} cy={mid.y}
+                        r={22 * (iw / 400)}
+                        fill="transparent"
+                        style={{ cursor: 'move', pointerEvents: 'all' }}
+                        onMouseDown={e => onMouseDown(e, edge.id)}
+                        onTouchStart={e => onTouchStart(e, edge.id)}
+                      />
+                      <circle
+                        cx={mid.x} cy={mid.y}
+                        r={11 * (iw / 400)}
+                        fill="white"
+                        stroke="#f59e0b"
+                        strokeWidth={3 * (iw / 400)}
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <circle
+                        cx={mid.x} cy={mid.y}
+                        r={5 * (iw / 400)}
+                        fill="#f59e0b"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    </g>
+                  );
+                })}
               </svg>
             )}
           </div>
@@ -808,7 +1134,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
       activationConstraint: { distance: 5 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { delay: 250, tolerance: 5 },
     })
   );
 
@@ -888,19 +1214,24 @@ export default function DocumentScanner({ onComplete, onClose }) {
             </DragOverlay>
           </DndContext>
         )}
-
-        <button
-          onClick={() => setStep('camera')}
-          className="w-full py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-600 text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors"
-        >
-          <Camera size={18} /> Add Another Page
-        </button>
       </div>
 
       <div 
-        className="p-5 bg-white border-t space-y-3 flex-shrink-0"
-        style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+        className="p-4 bg-white border-t flex flex-col gap-3 flex-shrink-0"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
       >
+        <button
+          onClick={() => {
+            if (pages.length >= 20) {
+              toast.error('Maximum 20 pages allowed per scan');
+            } else {
+              setStep('camera');
+            }
+          }}
+          className="w-full py-3.5 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-2xl text-blue-600 text-sm font-bold flex items-center justify-center gap-2 active:bg-blue-100 transition-colors"
+        >
+          <Camera size={18} /> Add Another Page
+        </button>
         <Button
           onClick={finishScan}
           loading={isProcessing}
@@ -929,9 +1260,7 @@ export default function DocumentScanner({ onComplete, onClose }) {
   );
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-black flex flex-col overflow-hidden touch-none"
-      style={{ height: '100dvh' }}
-    >
+    <div className="fixed inset-0 z-[9999] bg-black flex flex-col overflow-hidden touch-none">
       {step === 'camera' && renderCamera()}
       {step === 'crop'   && renderCrop()}
       {step === 'review' && renderReview()}

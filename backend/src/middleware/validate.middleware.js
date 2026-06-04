@@ -28,10 +28,9 @@ const schemas = {
   }),
 
   createPatient: Joi.object({
-    uhid: Joi.string().length(11).pattern(/^[A-Z0-9]{11}$/).uppercase().required().messages({
-      'string.length': 'UHID must be exactly 11 characters',
-      'string.pattern.base': 'UHID must contain only letters and numbers',
-      'any.required': 'UHID is required'
+    uhid: Joi.string().pattern(/^([A-Z0-9]{11}|[A-Z0-9]{16})$/).uppercase().required().messages({
+      'string.pattern.base': 'UHID must be exactly 11 or 16 alphanumeric characters',
+      'any.required': 'UHID or Registration Number is required'
     }),
     name: Joi.string().min(2).max(200).required(),
     ip_number: Joi.string().min(1).max(100).required().messages({
@@ -43,16 +42,16 @@ const schemas = {
 
   updatePatient: Joi.object({
     name: Joi.string().min(2).max(200).optional(),
-    uhid: Joi.string().length(11).uppercase().optional().messages({
-      'string.length': 'UHID must be exactly 11 characters',
-      'string.pattern.base': 'UHID must contain only letters and numbers'
+    uhid: Joi.string().pattern(/^([A-Z0-9]{11}|[A-Z0-9]{16})$/).uppercase().optional().messages({
+      'string.pattern.base': 'UHID must be exactly 11 or 16 alphanumeric characters'
     }),
     admission_date: Joi.date().optional(),
     hospital_status: Joi.string().valid('active', 'discharged').optional(),
-    settlement_status: Joi.string().valid('none', 'pending', 'completed').optional(),
+    settlement_status: Joi.string().valid('none', 'document_submission', 'pending', 'completed').optional(),
     discharge_date: Joi.date().optional().allow(null),
     settlement_date: Joi.date().optional().allow(null),
     pending_date: Joi.date().optional().allow(null),
+    document_submission_date: Joi.date().optional().allow(null),
     ip_number: Joi.string().min(1).max(100).optional(),
     notes: Joi.string().max(500).optional().allow(''),
   }),
@@ -60,10 +59,11 @@ const schemas = {
   bulkUpdatePatients: Joi.object({
     patientIds: Joi.array().items(Joi.string().uuid()).min(1).required(),
     hospital_status: Joi.string().valid('discharged').optional(),
-    settlement_status: Joi.string().valid('none', 'completed', 'pending').optional(),
+    settlement_status: Joi.string().valid('none', 'document_submission', 'pending', 'completed').optional(),
     discharge_date: Joi.date().optional(),
     settlement_date: Joi.date().optional(),
     pending_date: Joi.date().optional(),
+    document_submission_date: Joi.date().optional(),
   }),
 
   uploadDocument: Joi.object({

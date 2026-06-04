@@ -14,11 +14,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
 
-  const onSubmit = async (data) => {
+  const onSubmit = async (data, e) => {
+    if (e && e.preventDefault) e.preventDefault();
     try {
       await login(data);
       toast.success('Welcome back!');
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       toast.error(err.message || 'Login failed');
     }

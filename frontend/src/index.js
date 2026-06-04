@@ -9,3 +9,4 @@ root.render(
     <App />
   </React.StrictMode>
 );
+console.log("Cache invalidation v2");

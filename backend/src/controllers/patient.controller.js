@@ -230,8 +230,18 @@ const updatePatient = async (req, res) => {
     updates.discharge_date = null;
     // Also revert settlement statuses since an active patient cannot be settled
     updates.settlement_status = 'none';
+    updates.document_submission_date = null;
     updates.pending_date = null;
     updates.settlement_date = null;
+  }
+
+  // Auto-set document_submission_date when marking as document_submission
+  if (updates.settlement_status === 'document_submission' && current.settlement_status !== 'document_submission') {
+    updates.document_submission_date = updates.document_submission_date || new Date().toISOString();
+    if (current.settlement_status === 'pending' || current.settlement_status === 'completed') {
+      updates.pending_date = null;
+      updates.settlement_date = null;
+    }
   }
 
   // Auto-set pending_date when marking as pending
@@ -241,6 +251,7 @@ const updatePatient = async (req, res) => {
       updates.settlement_date = null;
     }
   } else if (updates.settlement_status === 'none' && current.settlement_status !== 'none') {
+    updates.document_submission_date = null;
     updates.pending_date = null;
     updates.settlement_date = null;
   }
@@ -266,7 +277,7 @@ const updatePatient = async (req, res) => {
 };
 
 const bulkUpdatePatients = async (req, res) => {
-  const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date, pending_date } = req.body;
+  const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date, pending_date, document_submission_date } = req.body;
   const now = new Date().toISOString();
 
   if (req.user.role === 'pcc') {
@@ -297,8 +308,18 @@ const bulkUpdatePatients = async (req, res) => {
         } else if (updates.hospital_status === 'active' && current.hospital_status === 'discharged') {
           updates.discharge_date = null;
           updates.settlement_status = 'none';
+          updates.document_submission_date = null;
           updates.pending_date = null;
           updates.settlement_date = null;
+        }
+
+        // Set document_submission_date when bulk-document_submission
+        if (updates.settlement_status === 'document_submission' && current.settlement_status !== 'document_submission') {
+          updates.document_submission_date = document_submission_date || now;
+          if (current.settlement_status === 'pending' || current.settlement_status === 'completed') {
+            updates.pending_date = null;
+            updates.settlement_date = null;
+          }
         }
 
         // Set pending_date when bulk-pending
@@ -308,6 +329,7 @@ const bulkUpdatePatients = async (req, res) => {
             updates.settlement_date = null;
           }
         } else if (updates.settlement_status === 'none' && current.settlement_status !== 'none') {
+          updates.document_submission_date = null;
           updates.pending_date = null;
           updates.settlement_date = null;
         }
@@ -358,6 +380,9 @@ const getPatientStats = async (req, res) => {
       
       -- discharged_patients (Discharged tab count) is the count of all discharged stays (not aggregated)
       COUNT(*) FILTER (WHERE hospital_status = 'discharged') as discharged_patients,
+      
+      -- document_submission_patients (Document Submission tab count)
+      COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'document_submission') as document_submission_patients,
       
       -- pending_settlement (PMJAY Pending tab count) is the count of all pending settlements (not aggregated)
       COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'pending') as pending_settlement,
@@ -536,18 +561,29 @@ const exportPatientsExcel = async (req, res) => {
     { header: 'Status', key: 'status', width: 15 },
     { header: 'Discharge Date', key: 'discharge', width: 15 },
     { header: 'Documents Count', key: 'docCount', width: 15 },
-    { header: 'PMJAY Status', key: 'pmjay', width: 25 }
+    { header: 'PMJAY Status', key: 'pmjay', width: 20 },
+    { header: 'Doc Submission Date', key: 'docSubDate', width: 20 },
+    { header: 'PMJAY Pending Date', key: 'pendingDate', width: 20 },
+    { header: 'Settlement Date', key: 'settleDate', width: 20 }
   ];
 
   worksheet.getRow(1).font = { bold: true };
 
   patientsRes.rows.forEach((p) => {
-    let pmjayStatus = p.settlement_status === 'completed' 
-      ? `Completed (${new Date(p.updated_at).toISOString().split('T')[0]})` 
-      : 'Pending';
+    let pmjayStatus = '-';
+    if (p.settlement_status === 'completed') {
+      pmjayStatus = 'Completed';
+    } else if (p.settlement_status === 'pending') {
+      pmjayStatus = 'PMJAY Pending';
+    } else if (p.settlement_status === 'document_submission') {
+      pmjayStatus = 'Doc Submission';
+    }
 
     let admittedStr = p.admission_date ? new Date(p.admission_date).toISOString().split('T')[0] : '';
     let dischargeStr = p.discharge_date ? new Date(p.discharge_date).toISOString().split('T')[0] : '';
+    let docSubDateStr = p.document_submission_date ? new Date(p.document_submission_date).toISOString().split('T')[0] : '-';
+    let pendingDateStr = p.pending_date ? new Date(p.pending_date).toISOString().split('T')[0] : '-';
+    let settleDateStr = p.settlement_date ? new Date(p.settlement_date).toISOString().split('T')[0] : '-';
 
     worksheet.addRow({
       name: p.name,
@@ -557,7 +593,10 @@ const exportPatientsExcel = async (req, res) => {
       status: p.hospital_status === 'active' ? 'Active' : 'Discharged',
       discharge: p.hospital_status === 'discharged' ? dischargeStr : '-',
       docCount: p.document_count || 0,
-      pmjay: pmjayStatus
+      pmjay: pmjayStatus,
+      docSubDate: docSubDateStr,
+      pendingDate: pendingDateStr,
+      settleDate: settleDateStr
     });
   });
 
@@ -570,6 +609,10 @@ const exportPatientsExcel = async (req, res) => {
 
 const deletePatient = async (req, res) => {
   const { id } = req.params;
+
+  if (!['admin', 'hod'].includes(req.user.role)) {
+    return sendError(res, 'Insufficient permissions to delete patient profile', 403);
+  }
 
   const patientRes = await db.query('SELECT * FROM patients WHERE id = $1', [id]);
   if (!patientRes.rows.length) return sendError(res, 'Patient not found', 404);
@@ -602,4 +645,72 @@ const deletePatient = async (req, res) => {
   }
 };
 
-module.exports = { createPatient, getPatients, getPatient, updatePatient, bulkUpdatePatients, getPatientStats, getUploadHistory, exportPatientsExcel, deletePatient };
+const getDashboardData = async (req, res) => {
+  const statsQuery = db.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM (SELECT DISTINCT ON (uhid) id FROM patients ORDER BY uhid, admission_date DESC) t) as total_patients,
+      (SELECT COUNT(*)::int FROM (SELECT DISTINCT ON (uhid) id FROM patients WHERE hospital_status = 'active' ORDER BY uhid, admission_date DESC) a) as active_patients,
+      COUNT(*) FILTER (WHERE hospital_status = 'discharged') as discharged_patients,
+      COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'document_submission') as document_submission_patients,
+      COUNT(*) FILTER (WHERE hospital_status = 'discharged' AND settlement_status = 'pending') as pending_settlement,
+      COUNT(*) FILTER (WHERE settlement_status = 'completed') as completed_settlement,
+      COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as admitted_today
+    FROM patients
+  `);
+
+  const docStatsQuery = db.query(`
+    SELECT COUNT(*) as total_documents, COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as uploaded_today
+    FROM documents WHERE is_deleted = false
+  `);
+
+  const recentPatientsQuery = db.query(`
+    SELECT * FROM (
+      SELECT DISTINCT ON (p.uhid) p.*, 
+        u.name as created_by_name,
+        (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false) as document_count
+      FROM patients p
+      LEFT JOIN users u ON u.id = p.created_by
+      ORDER BY p.uhid, p.admission_date DESC
+    ) sub
+    ORDER BY sub.admission_date DESC
+    LIMIT 8 OFFSET 0
+  `);
+
+  const hourlyResQuery = db.query(`
+    SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS hour, COUNT(*) AS count
+    FROM documents WHERE is_deleted = false AND created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day' GROUP BY hour ORDER BY hour
+  `);
+
+  const monthlyResQuery = db.query(`
+    SELECT EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS month, COUNT(*) AS count
+    FROM documents WHERE is_deleted = false AND EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata') = EXTRACT(YEAR FROM NOW()) GROUP BY month ORDER BY month
+  `);
+
+  const yearlyResQuery = db.query(`
+    SELECT EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS year, COUNT(*) AS count
+    FROM documents WHERE is_deleted = false GROUP BY year ORDER BY year
+  `);
+
+  const [stats, docStats, recentRes, hourlyRes, monthlyRes, yearlyRes] = await Promise.all([
+    statsQuery, docStatsQuery, recentPatientsQuery, hourlyResQuery, monthlyResQuery, yearlyResQuery
+  ]);
+
+  const hourMap = {};
+  hourlyRes.rows.forEach(r => { hourMap[r.hour] = parseInt(r.count); });
+  const hourly = Array.from({ length: 24 }, (_, i) => ({ label: `${String(i).padStart(2,'0')}:00`, count: hourMap[i] || 0 }));
+
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthMap = {};
+  monthlyRes.rows.forEach(r => { monthMap[r.month] = parseInt(r.count); });
+  const monthly = Array.from({ length: 12 }, (_, i) => ({ label: monthNames[i], count: monthMap[i + 1] || 0 }));
+
+  const yearly = yearlyRes.rows.map(r => ({ label: String(r.year), count: parseInt(r.count) }));
+
+  return sendSuccess(res, {
+    stats: { ...stats.rows[0], ...docStats.rows[0] },
+    recentPatients: recentRes.rows,
+    uploadHistory: { hourly, monthly, yearly }
+  });
+};
+
+module.exports = { createPatient, getPatients, getPatient, updatePatient, bulkUpdatePatients, getPatientStats, getUploadHistory, exportPatientsExcel, deletePatient, getDashboardData };

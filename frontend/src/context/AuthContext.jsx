@@ -21,8 +21,13 @@ export function AuthProvider({ children }) {
     if (token) {
       authApi.getMe()
         .then((res) => {
-          setUser(res.data);
-          sessionStorage.setItem('hms_user', JSON.stringify(res.data));
+          const userData = res?.data || res;
+          if (userData && userData.id) {
+            setUser(userData);
+            sessionStorage.setItem('hms_user', JSON.stringify(userData));
+          } else {
+            logout();
+          }
         })
         .catch(() => { logout(); })
         .finally(() => setLoading(false));
@@ -33,9 +38,16 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (credentials) => {
     const res = await authApi.login(credentials);
-    const { user, token } = res.data;
+    const payload = res?.data || res; // Handle both wrapped and unwrapped responses safely
+    
+    if (!payload || !payload.user) {
+      throw new Error('Invalid response from server: User data missing');
+    }
+    
+    const { user, token } = payload;
+    
     // Store in sessionStorage (tab-specific)
-    sessionStorage.setItem('hms_token', token);
+    if (token) sessionStorage.setItem('hms_token', token);
     sessionStorage.setItem('hms_user', JSON.stringify(user));
     setUser(user);
     return user;

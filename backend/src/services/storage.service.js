@@ -47,12 +47,18 @@ const uploadToS3 = async (buffer, key, mimeType, metadata = {}) => {
   }
 };
 
-const getPresignedUrl = async (key, expiresIn = 3600) => {
+const getPresignedUrl = async (key, expiresIn = 3600, downloadName = null) => {
   try {
-    const command = new GetObjectCommand({
+    const params = {
       Bucket: BUCKET_NAME,
       Key: key,
-    });
+    };
+    
+    if (downloadName) {
+      params.ResponseContentDisposition = `attachment; filename="${downloadName}"`;
+    }
+
+    const command = new GetObjectCommand(params);
     
     const signedUrl = await getSignedUrl(s3Client, command, { expiresIn });
     return signedUrl;

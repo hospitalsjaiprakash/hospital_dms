@@ -20,7 +20,7 @@ const router = express.Router();
  */
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB limit
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'application/pdf', 'image/webp'];
     if (allowed.includes(file.mimetype)) {
@@ -39,13 +39,14 @@ router.get('/auth/me', authenticate, authCtrl.getMe);
 // ── Patients ─────────────────────────────────────────────────────────────────
 router.get('/patients/stats', authenticate, patientCtrl.getPatientStats);
 router.get('/patients/upload-history', authenticate, patientCtrl.getUploadHistory);
+router.get('/dashboard-data', authenticate, patientCtrl.getDashboardData);
 router.get('/patients/export', authenticate, patientCtrl.exportPatientsExcel);
 router.get('/patients', authenticate, patientCtrl.getPatients);
 router.post('/patients', authenticate, validate(schemas.createPatient), patientCtrl.createPatient);
 router.post('/patients/bulk', authenticate, validate(schemas.bulkUpdatePatients), patientCtrl.bulkUpdatePatients);
 router.get('/patients/:id', authenticate, patientCtrl.getPatient);
-router.patch('/patients/:id', authenticate, validate(schemas.updatePatient), patientCtrl.updatePatient);
-router.delete('/patients/:id', authenticate, patientCtrl.deletePatient);
+router.post('/patients/:id', authenticate, validate(schemas.updatePatient), patientCtrl.updatePatient);
+router.post('/patients/:id/delete', authenticate, authorize('admin', 'hod'), patientCtrl.deletePatient);
 
 // ── Documents ────────────────────────────────────────────────────────────────
 router.get('/documents', authenticate, documentCtrl.getAllDocuments);
@@ -58,23 +59,25 @@ router.post(
 );
 
 router.get('/patients/:patient_id/documents', authenticate, documentCtrl.getPatientDocuments);
+router.post('/documents/bulk-delete', authenticate, documentCtrl.bulkDeleteDocuments);
+router.get('/documents/:id/download-raw', authenticate, documentCtrl.downloadDocumentRaw);
 router.get('/documents/:id', authenticate, documentCtrl.getDocument);
-router.patch(
+router.post(
   '/documents/:id',
   authenticate,
   upload.single('file'),
   validate(schemas.updateDocument, 'body'),
   documentCtrl.updateDocument
 );
-router.delete('/documents/:id', authenticate, documentCtrl.deleteDocument);
-router.post('/documents/bulk-delete', authenticate, documentCtrl.bulkDeleteDocuments);
+router.post('/documents/:id/delete', authenticate, documentCtrl.deleteDocument);
 router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.exportPatientDocuments);
 
 // ── Users (Admin & HOD) ──────────────────────────────────────────────────────
 router.get('/users', authenticate, authorize('admin', 'hod'), userCtrl.getUsers);
 router.post('/users', authenticate, authorize('admin', 'hod'), validate(schemas.createUser), userCtrl.createUser);
-router.patch('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
-router.delete('/users/:id', authenticate, authorize('admin'), userCtrl.deleteUser);
+router.post('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
+router.post('/users/:id/delete', authenticate, authorize('admin'), userCtrl.deleteUser);
+router.post('/users/sync-gsheet', authenticate, authorize('admin'), userCtrl.syncAllUsersToSheet);
 
 // ── Audit Logs (Admin & HOD) ────────────────────────────────────────────────
 router.get('/audit-logs', authenticate, authorize('admin', 'hod', 'pcc', 'nursing'), auditCtrl.getLogs);

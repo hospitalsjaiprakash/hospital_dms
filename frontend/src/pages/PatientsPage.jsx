@@ -10,7 +10,8 @@ import { useAuth } from '../context/AuthContext';
 
 const STATUS_COLORS = {
   active: 'green', discharged: 'blue',
-  pending: 'amber', completed: 'green',
+  document_submission: 'indigo', pending: 'amber', completed: 'green',
+  none: 'gray'
 };
 
 // Returns a datetime-local string for "now" in local time
@@ -38,17 +39,18 @@ export default function PatientsPage() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [bulkDate, setBulkDate] = useState(localNow());
-  const [bulkMarkPending, setBulkMarkPending] = useState(false);
+  const [bulkSettlementStatus, setBulkSettlementStatus] = useState('none');
 
   const debouncedSearch = useDebounce(search, 300);
 
   const getHospitalStatus = () => {
     if (activeTab === 'active') return 'active';
-    if (activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled') return 'discharged';
+    if (activeTab === 'discharged' || activeTab === 'document_submission' || activeTab === 'pending' || activeTab === 'settled') return 'discharged';
     return '';
   };
 
   const getSettlementStatus = () => {
+    if (activeTab === 'document_submission') return 'document_submission';
     if (activeTab === 'pending') return 'pending';
     if (activeTab === 'settled') return 'completed';
     return '';
@@ -92,21 +94,24 @@ export default function PatientsPage() {
   const patients = data?.data || [];
   const pagination = data?.pagination;
 
-  const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged');
+  const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged' || activeTab === 'document_submission');
   const selectedIds = selectedPatients.map(p => p.id);
 
-  const showDischargeCol = activeTab === 'discharged' || activeTab === 'pending' || activeTab === 'settled';
+  const showDischargeCol = activeTab === 'discharged' || activeTab === 'document_submission' || activeTab === 'pending' || activeTab === 'settled';
+  const showDocSubCol = activeTab === 'document_submission' || activeTab === 'pending' || activeTab === 'settled';
   const showPendingCol = activeTab === 'pending' || activeTab === 'settled';
   const showSettlementCol = activeTab === 'settled';
 
   // Dynamic grid
   const gridStyle = showSettlementCol
-    ? 'repeat(18, minmax(0, 1fr))'
+    ? 'repeat(21, minmax(0, 1fr))'
     : showPendingCol
-      ? 'repeat(17, minmax(0, 1fr))'
-      : showDischargeCol
-        ? 'repeat(15, minmax(0, 1fr))'
-        : 'repeat(14, minmax(0, 1fr))';
+      ? 'repeat(20, minmax(0, 1fr))'
+      : showDocSubCol
+        ? 'repeat(18, minmax(0, 1fr))'
+        : showDischargeCol
+          ? 'repeat(16, minmax(0, 1fr))'
+          : 'repeat(15, minmax(0, 1fr))';
 
   const patientColSpan = showDischargeCol ? 'col-span-3' : 'col-span-4';
   const uhidColSpan = showSettlementCol ? 'col-span-2' : 'col-span-3';
@@ -119,7 +124,9 @@ export default function PatientsPage() {
         const existingIds = new Set(prev.map(p => p.id));
         const selectablePatients = activeTab === 'discharged' 
           ? patients.filter(p => p.settlement_status === 'none')
-          : patients;
+          : activeTab === 'document_submission'
+            ? patients.filter(p => p.settlement_status === 'document_submission')
+            : patients;
         const toAdd = selectablePatients.filter(p => !existingIds.has(p.id));
         return [...prev, ...toAdd];
       });
@@ -132,6 +139,7 @@ export default function PatientsPage() {
   const handleSelectOne = (patient) => {
     // Prevent selecting unselectable patients
     if (activeTab === 'discharged' && patient.settlement_status !== 'none') return;
+    if (activeTab === 'document_submission' && patient.settlement_status !== 'document_submission') return;
     
     setSelectedPatients(prev =>
       prev.some(p => p.id === patient.id)
@@ -142,7 +150,12 @@ export default function PatientsPage() {
 
   const openPreviewModal = () => {
     setBulkDate(localNow());
-    setBulkMarkPending(false);
+    setBulkSettlementStatus(
+      activeTab === 'active' ? 'none' : 
+      activeTab === 'discharged' ? 'document_submission' : 
+      activeTab === 'document_submission' ? 'pending' : 
+      activeTab === 'pending' ? 'completed' : 'none'
+    );
     setShowPreviewModal(true);
   };
 
@@ -154,12 +167,16 @@ export default function PatientsPage() {
       if (activeTab === 'active') {
         actionData.hospital_status = 'discharged';
         actionData.discharge_date = isoDate;
-        actionData.settlement_status = bulkMarkPending ? 'pending' : 'none';
+        actionData.settlement_status = 'none';
+      } else if (activeTab === 'discharged') {
+        actionData.settlement_status = 'document_submission';
+        actionData.document_submission_date = isoDate;
+      } else if (activeTab === 'document_submission') {
+        actionData.settlement_status = 'pending';
+        actionData.pending_date = isoDate;
       } else if (activeTab === 'pending') {
         actionData.settlement_status = 'completed';
         actionData.settlement_date = isoDate;
-      } else if (activeTab === 'discharged') {
-        actionData.settlement_status = 'pending';
       }
       await patientApi.bulkUpdate(actionData);
       setSelectedPatients([]);
@@ -176,6 +193,7 @@ export default function PatientsPage() {
     { id: 'all', label: 'All Patients' },
     { id: 'active', label: 'Active (Admitted)' },
     { id: 'discharged', label: 'Discharged' },
+    { id: 'document_submission', label: 'Document Submission' },
     { id: 'pending', label: 'PMJAY Pending' },
     { id: 'settled', label: 'PMJAY Settled' },
   ];
@@ -217,25 +235,31 @@ export default function PatientsPage() {
               >
                 <span className="hidden sm:inline">
                   {activeTab === 'active' ? `Discharge Selected (${selectedPatients.length})` : 
-                   activeTab === 'discharged' ? `Mark Pending (${selectedPatients.length})` :
-                   `Settle Selected (${selectedPatients.length})`}
+                   activeTab === 'discharged' ? `Document Submission Selected (${selectedPatients.length})` :
+                   activeTab === 'document_submission' ? `Mark Pending Selected (${selectedPatients.length})` :
+                   activeTab === 'pending' ? `Settle Selected (${selectedPatients.length})` :
+                   `Action Selected (${selectedPatients.length})`}
                 </span>
                 <span className="sm:hidden">
                   {activeTab === 'active' ? `Discharge (${selectedPatients.length})` : 
-                   activeTab === 'discharged' ? `Pending (${selectedPatients.length})` :
-                   `Settle (${selectedPatients.length})`}
+                   activeTab === 'discharged' ? `Doc Sub (${selectedPatients.length})` :
+                   activeTab === 'document_submission' ? `Pending (${selectedPatients.length})` :
+                   activeTab === 'pending' ? `Settle (${selectedPatients.length})` :
+                   `Action (${selectedPatients.length})`}
                 </span>
               </Button>
             </>
           )}
-          <button
-            onClick={handleExport}
-            disabled={isExporting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-          >
-            {isExporting ? <Spinner size="sm" /> : <Download size={13} />}
-            {isExporting ? 'Exporting...' : 'Export'}
-          </button>
+          {!['pcc', 'nursing'].includes(user?.role) && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              {isExporting ? <Spinner size="sm" /> : <Download size={13} />}
+              {isExporting ? 'Exporting...' : 'Export'}
+            </button>
+          )}
           <Link to="/patients/new">
             <Button size="sm">
               <Plus size={15} />
@@ -299,12 +323,20 @@ export default function PatientsPage() {
                     type="checkbox"
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-1 cursor-pointer"
                     checked={patients.length > 0 && (() => {
-                      const selectable = activeTab === 'discharged' ? patients.filter(p => p.settlement_status === 'none') : patients;
+                      const selectable = activeTab === 'discharged' 
+                        ? patients.filter(p => p.settlement_status === 'none') 
+                        : activeTab === 'document_submission'
+                          ? patients.filter(p => p.settlement_status === 'document_submission')
+                          : patients;
                       return selectable.length > 0 && selectable.every(p => selectedIds.includes(p.id));
                     })()}
                     ref={el => {
                       if (el) {
-                        const selectable = activeTab === 'discharged' ? patients.filter(p => p.settlement_status === 'none') : patients;
+                        const selectable = activeTab === 'discharged' 
+                          ? patients.filter(p => p.settlement_status === 'none') 
+                          : activeTab === 'document_submission'
+                            ? patients.filter(p => p.settlement_status === 'document_submission')
+                            : patients;
                         const someSelected = selectable.some(p => selectedIds.includes(p.id));
                         const allSelected = selectable.length > 0 && selectable.every(p => selectedIds.includes(p.id));
                         el.indeterminate = someSelected && !allSelected;
@@ -315,10 +347,11 @@ export default function PatientsPage() {
                 )}
                 Patient
               </div>
-              <div className="col-span-1">IP No</div>
-              <div className={uhidColSpan}>UHID</div>
+              <div className="col-span-2">IP No</div>
+              <div className={uhidColSpan}>UHID/REG No</div>
               <div className="col-span-2">Admitted</div>
               {showDischargeCol && <div className="col-span-2">Discharged</div>}
+              {showDocSubCol && <div className="col-span-2">Submitted</div>}
               {showPendingCol && <div className="col-span-2">Pending</div>}
               {showSettlementCol && <div className="col-span-2">PMJAY Settled</div>}
               <div className={statusColSpan}>Status</div>
@@ -343,7 +376,8 @@ export default function PatientsPage() {
                     {canBulkSelect && (
                       <div
                         className={`flex items-center p-1 rounded ${
-                          (activeTab === 'discharged' && patient.settlement_status !== 'none') 
+                          ((activeTab === 'discharged' && patient.settlement_status !== 'none') ||
+                           (activeTab === 'document_submission' && patient.settlement_status !== 'document_submission'))
                             ? 'opacity-0 pointer-events-none' 
                             : 'hover:bg-gray-200'
                         }`}
@@ -351,6 +385,7 @@ export default function PatientsPage() {
                           e.preventDefault();
                           e.stopPropagation();
                           if (activeTab === 'discharged' && patient.settlement_status !== 'none') return;
+                          if (activeTab === 'document_submission' && patient.settlement_status !== 'document_submission') return;
                           handleSelectOne(patient);
                         }}
                       >
@@ -372,8 +407,8 @@ export default function PatientsPage() {
                   </div>
 
                   {/* IP No */}
-                  <div className="hidden sm:flex sm:col-span-1 items-center">
-                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{patient.ip_number || '-'}</span>
+                  <div className="hidden sm:flex sm:col-span-2 items-center pr-2">
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 break-words max-w-full">{patient.ip_number || '-'}</span>
                   </div>
 
                   {/* UHID */}
@@ -401,10 +436,24 @@ export default function PatientsPage() {
                     </div>
                   )}
 
+                  {/* Document Submission Date */}
+                  {showDocSubCol && (
+                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                      {patient.settlement_status !== 'none' && patient.document_submission_date ? (
+                        <>
+                          <span className="text-xs font-semibold text-indigo-700">{fmtDate(patient.document_submission_date)}</span>
+                          <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.document_submission_date)}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Pending Date (shown in pending / settled tabs) */}
                   {showPendingCol && (
                     <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
-                      {patient.settlement_status === 'pending' && patient.pending_date ? (
+                      {(patient.settlement_status === 'pending' || patient.settlement_status === 'completed') && patient.pending_date ? (
                         <>
                           <span className="text-xs font-semibold text-amber-700">{fmtDate(patient.pending_date)}</span>
                           <span className="text-[10px] text-gray-400 mt-0.5">{fmtTime(patient.pending_date)}</span>
@@ -432,8 +481,10 @@ export default function PatientsPage() {
                   {/* Status */}
                   <div className={`hidden sm:flex ${statusColSpan} flex-col gap-1 items-start`}>
                     <Badge variant={STATUS_COLORS[patient.hospital_status]}>{patient.hospital_status}</Badge>
-                    {patient.hospital_status === 'discharged' && (
-                      <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">{patient.settlement_status}</Badge>
+                    {patient.hospital_status === 'discharged' && patient.settlement_status && patient.settlement_status !== 'none' && (
+                      <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">
+                        {patient.settlement_status === 'document_submission' ? 'doc submission' : patient.settlement_status}
+                      </Badge>
                     )}
                   </div>
 
@@ -463,12 +514,29 @@ export default function PatientsPage() {
       </Card>
 
       {/* Bulk Action Preview Modal */}
-      <Modal open={showPreviewModal} onClose={() => setShowPreviewModal(false)} title="Confirm Bulk Action" maxWidth="max-w-lg">
+      <Modal 
+        open={showPreviewModal} 
+        onClose={() => setShowPreviewModal(false)} 
+        title="Confirm Bulk Action" 
+        maxWidth="max-w-lg"
+        footer={
+          <div className="flex gap-3 w-full">
+            <Button variant="secondary" onClick={() => setShowPreviewModal(false)} className="flex-1">Cancel</Button>
+            <Button variant="success" onClick={executeBulkAction} loading={isBulkUpdating} className="flex-1">
+              Confirm & {activeTab === 'active' ? 'Discharge' : 
+                         activeTab === 'discharged' ? 'Submit Documents' : 
+                         activeTab === 'document_submission' ? 'Mark Pending' : 
+                         'Settle'}
+            </Button>
+          </div>
+        }
+      >
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
             You are about to <strong>
               {activeTab === 'active' ? 'Discharge' : 
-               activeTab === 'discharged' ? 'Mark as PMJAY Pending' : 
+               activeTab === 'discharged' ? 'Submit Documents for' : 
+               activeTab === 'document_submission' ? 'Mark as PMJAY Pending for' : 
                'Settle PMJAY for'}
             </strong> the following {selectedPatients.length} patient{selectedPatients.length !== 1 && 's'}:
           </p>
@@ -477,33 +545,19 @@ export default function PatientsPage() {
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl space-y-1">
             <label className="block text-xs font-semibold text-blue-700 uppercase tracking-wide">
               {activeTab === 'active' ? 'Discharge Date & Time' : 
-               activeTab === 'discharged' ? 'Pending Date & Time' : 
+               activeTab === 'discharged' ? 'Submission Date & Time' : 
+               activeTab === 'document_submission' ? 'Pending Date & Time' : 
                'Settlement Date & Time'}
             </label>
             <input
               type="datetime-local"
               value={bulkDate}
               onChange={(e) => setBulkDate(e.target.value)}
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-blue-500">Defaults to current date & time if left unchanged.</p>
           </div>
-
-          {/* PMJAY Pending Checkbox (only for discharge) */}
-          {activeTab === 'active' && (
-            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-              <input 
-                type="checkbox" 
-                className="w-4 h-4 mt-0.5 text-amber-600 rounded border-gray-300 focus:ring-amber-500 cursor-pointer"
-                checked={bulkMarkPending}
-                onChange={(e) => setBulkMarkPending(e.target.checked)}
-              />
-              <div>
-                <span className="text-sm font-semibold text-gray-800 block">Mark as PMJAY Pending Settlement</span>
-                <span className="text-xs text-gray-500">Check this box if these patients need to be settled via PMJAY.</span>
-              </div>
-            </label>
-          )}
 
           {/* Patient list preview */}
           <div className="max-h-52 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
@@ -513,15 +567,6 @@ export default function PatientsPage() {
                 <span className="font-mono text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded">{p.uhid}</span>
               </div>
             ))}
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-            <Button variant="secondary" onClick={() => setShowPreviewModal(false)}>Cancel</Button>
-            <Button variant="success" onClick={executeBulkAction} loading={isBulkUpdating}>
-              Confirm & {activeTab === 'active' ? 'Discharge' : 
-                         activeTab === 'discharged' ? 'Mark Pending' : 
-                         'Settle'}
-            </Button>
           </div>
         </div>
       </Modal>

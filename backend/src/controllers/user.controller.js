@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { sendSuccess, sendError, sendPaginated, getPaginationParams } = require('../utils/response');
 const { auditLog, ACTIONS } = require('../services/audit.service');
+const { sendToGSheet } = require('../services/gsheet.service');
 
 const getUsers = async (req, res) => {
   const { page, limit, offset } = getPaginationParams(req.query);
@@ -71,6 +72,9 @@ const createUser = async (req, res) => {
 
   await auditLog(ACTIONS.USER_CREATE, 'user')(req, result.rows[0].id, null, { name, role });
 
+  // Sync to Google Sheet
+  sendToGSheet('create', { user: result.rows[0] });
+
   return sendSuccess(res, result.rows[0], 'User created successfully', 201);
 };
 
@@ -91,6 +95,10 @@ const toggleUserStatus = async (req, res) => {
   await db.query('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, id]);
 
   await auditLog(ACTIONS.USER_UPDATE, 'user')(req, id, { is_active: userRes.rows[0].is_active }, { is_active: newStatus });
+
+  // Sync to Google Sheet
+  const updatedUser = { ...userRes.rows[0], is_active: newStatus };
+  sendToGSheet('update', { user: updatedUser });
 
   return sendSuccess(res, null, `User ${newStatus ? 'activated' : 'deactivated'} successfully`);
 };
@@ -122,4 +130,21 @@ const deleteUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, createUser, toggleUserStatus, deleteUser };
+const syncAllUsersToSheet = async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Only administrators can perform this action', 403);
+  }
+
+  const usersRes = await db.query(
+    `SELECT id, name, role, employee_id, is_active, plain_password, created_at 
+     FROM users 
+     WHERE role != 'admin' 
+     ORDER BY created_at ASC`
+  );
+
+  sendToGSheet('sync_all', { users: usersRes.rows });
+
+  return sendSuccess(res, null, 'Sync triggered successfully');
+};
+
+module.exports = { getUsers, createUser, toggleUserStatus, deleteUser, syncAllUsersToSheet };

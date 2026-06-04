@@ -6,9 +6,116 @@ const { canModifyDocument } = require('../middleware/auth.middleware');
 const archiver = require('archiver');
 const https = require('https');
 const sharp = require('sharp');
+const { compressPDFToTarget } = require('../services/pdf.service');
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'image/webp'];
-const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB for images
+const MAX_PDF_SIZE_BEFORE_COMPRESSION = 50 * 1024 * 1024; // 50MB limit
+const COMPRESSION_TIMEOUT = 300 * 1000; // 5 minutes max for PDF compression
+
+// Background compression queue
+const compressionQueue = new Set();
+
+/**
+ * Asynchronously compress and re-upload a document
+ */
+const compressDocumentAsync = async (documentId, originalBuffer, mimeType, s3Key, patient, docType) => {
+  if (compressionQueue.has(documentId)) {
+    console.log(`Document ${documentId} already in compression queue`);
+    return;
+  }
+
+  compressionQueue.add(documentId);
+  const originalSize = originalBuffer.length;
+  console.log(`[ASYNC COMPRESS START] Document ${documentId}: ${(originalSize / 1024 / 1024).toFixed(2)}MB`);
+
+  try {
+    let compressedBuffer = originalBuffer;
+    let compressed = false;
+
+    // Compress PDF in background
+    if (mimeType === 'application/pdf' && originalBuffer.length > 2 * 1024 * 1024) {
+      try {
+        const startTime = Date.now();
+        console.log(`[ASYNC COMPRESS] Starting PDF compression for ${documentId}...`);
+        
+        const compressedPDF = await Promise.race([
+          compressPDFToTarget(originalBuffer),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Compression timeout after ${COMPRESSION_TIMEOUT / 1000}s`)), COMPRESSION_TIMEOUT)
+          )
+        ]);
+
+        if (compressedPDF && compressedPDF.length < originalBuffer.length) {
+          compressedBuffer = compressedPDF;
+          compressed = true;
+          const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(`[ASYNC COMPRESS SUCCESS] Document ${documentId}: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB in ${timeTaken}s`);
+        } else {
+          console.log(`[ASYNC COMPRESS] No compression benefit for document ${documentId}`);
+        }
+      } catch (err) {
+        console.error(`[ASYNC COMPRESS ERROR] Document ${documentId}: ${err.message}`);
+      }
+    }
+
+    // If compression happened, upload the compressed version
+    if (compressed && compressedBuffer.length < originalBuffer.length) {
+      try {
+        const compressedS3Key = s3Key.replace(/\.pdf$/, '_compressed.pdf');
+        console.log(`[ASYNC COMPRESS] Uploading compressed version to S3: ${compressedS3Key}`);
+        
+        const { url: compressedUrl } = await uploadToS3(compressedBuffer, compressedS3Key, mimeType, {
+          patientId: patient.id,
+          docType: docType,
+          uploadedBy: 'system',
+          isCompressed: 'true',
+        });
+
+        // Delete the original uncompressed file from S3
+        try {
+          console.log(`[ASYNC COMPRESS] Deleting original file from S3: ${s3Key}`);
+          await deleteFromS3(s3Key);
+          console.log(`[ASYNC COMPRESS] Original file deleted: ${s3Key}`);
+        } catch (delErr) {
+          console.warn(`[ASYNC COMPRESS] Failed to delete original file ${s3Key}:`, delErr.message);
+        }
+
+        // Update document record with compressed version
+        const updateResult = await db.query(
+          `UPDATE documents SET file_url = $1, s3_key = $2, file_size = $3, is_compressed = true, updated_at = NOW()
+           WHERE id = $4 RETURNING *`,
+          [compressedUrl, compressedS3Key, compressedBuffer.length, documentId]
+        );
+
+        console.log(`[ASYNC COMPRESS COMPLETE] Document ${documentId} updated: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB (original file deleted)`);
+      } catch (err) {
+        console.error(`[ASYNC COMPRESS] Failed to update document ${documentId}:`, err.message);
+      }
+    } else {
+      console.log(`[ASYNC COMPRESS SKIPPED] Document ${documentId}: no compression needed or compression failed`);
+    }
+  } catch (err) {
+    console.error(`[ASYNC COMPRESS ERROR] Document ${documentId}:`, err.message);
+  } finally {
+    compressionQueue.delete(documentId);
+    console.log(`[ASYNC COMPRESS END] Document ${documentId} removed from queue`);
+  }
+};
+
+const getDownloadNameForDoc = (doc) => {
+  let baseName = doc.file_name || 'document';
+  if (baseName === 'blob' || baseName === 'image') {
+    baseName = `${doc.doc_type}_${new Date(doc.created_at).getTime()}`;
+  }
+  if (!baseName.includes('.')) {
+    if (doc.mime_type === 'application/pdf') baseName += '.pdf';
+    else if (doc.mime_type === 'image/jpeg') baseName += '.jpg';
+    else if (doc.mime_type === 'image/png') baseName += '.png';
+    else baseName += '.jpg';
+  }
+  return baseName;
+};
 
 /**
  * Upload a document for a patient
@@ -33,23 +140,44 @@ const uploadDocument = async (req, res) => {
   }
 
   let fileBuffer = req.file.buffer;
+  const originalSize = fileBuffer.length;
 
-  // Compress images if over 1MB
+  // QUICK: Only compress images synchronously (Sharp is fast)
   if (['image/jpeg', 'image/png', 'image/webp'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
-    fileBuffer = await sharp(fileBuffer)
-      .resize({ width: 1920, withoutEnlargement: true })
-      .jpeg({ quality: 75 })
-      .toBuffer();
+    try {
+      let quality = 85;
+      let width = 1920;
+      const targetSize = MAX_FILE_SIZE;
+      
+      fileBuffer = await sharp(req.file.buffer)
+        .resize({ width, withoutEnlargement: true })
+        .jpeg({ quality, progressive: true })
+        .toBuffer();
 
-    if (fileBuffer.length > MAX_FILE_SIZE) {
-      return sendError(res, 'File too large even after compression. Max 1MB allowed.', 400);
+      while (fileBuffer.length > targetSize && quality >= 10) {
+        quality = Math.max(10, quality - 8);
+        width = Math.round(width * 0.75);
+        fileBuffer = await sharp(req.file.buffer)
+          .resize({ width, withoutEnlargement: true })
+          .jpeg({ quality, progressive: true })
+          .toBuffer();
+      }
+
+      if (fileBuffer.length > targetSize) {
+        fileBuffer = await sharp(req.file.buffer)
+          .resize({ width: 800, withoutEnlargement: true })
+          .jpeg({ quality: 5, progressive: true })
+          .toBuffer();
+      }
+
+      console.log(`Image compressed: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+    } catch (err) {
+      console.error('Image compression failed:', err.message);
+      // Use original if compression fails
     }
   }
 
-  if (req.file.mimetype === 'application/pdf' && fileBuffer.length > MAX_FILE_SIZE) {
-    return sendError(res, 'PDF file size exceeds 1MB limit', 400);
-  }
-
+  // For PDFs: Upload original immediately, compress async in background
   const patientIdentifier = `${patient.uhid}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const s3Key = generateS3Key(patientIdentifier, doc_type, req.file.originalname);
   const { url } = await uploadToS3(fileBuffer, s3Key, req.file.mimetype, {
@@ -68,14 +196,23 @@ const uploadDocument = async (req, res) => {
   }
 
   const result = await db.query(
-    `INSERT INTO documents (patient_id, file_url, s3_key, file_name, file_size, mime_type, doc_type, notes, uploaded_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO documents (patient_id, file_url, s3_key, file_name, file_size, mime_type, doc_type, notes, uploaded_by, is_compressed)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
-    [patient_id, url, s3Key, finalFileName, fileBuffer.length, req.file.mimetype, doc_type, notes || null, req.user.id]
+    [patient_id, url, s3Key, finalFileName, fileBuffer.length, req.file.mimetype, doc_type, notes || null, req.user.id, false]
   );
 
   const document = result.rows[0];
   await auditLog(ACTIONS.DOCUMENT_UPLOAD, 'document')(req, document.id, null, { patient_id, doc_type, file_name: finalFileName });
+
+  // ASYNC: Trigger compression in background for PDFs >= 2MB (don't wait for it)
+  if (req.file.mimetype === 'application/pdf' && originalSize >= 2 * 1024 * 1024) {
+    console.log(`[UPLOAD] Queuing async compression for document ${document.id} (${(originalSize / 1024 / 1024).toFixed(1)}MB, stored as ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
+    setImmediate(() => {
+      compressDocumentAsync(document.id, req.file.buffer, req.file.mimetype, s3Key, patient, doc_type)
+        .catch(err => console.error('[UPLOAD] Background compression error:', err));
+    });
+  }
 
   return sendSuccess(res, document, 'Document uploaded successfully', 201);
 };
@@ -116,6 +253,7 @@ const getPatientDocuments = async (req, res) => {
     docsRes.rows.map(async (doc) => ({
       ...doc,
       presigned_url: await getPresignedUrl(doc.s3_key).catch(() => doc.file_url),
+      download_url: await getPresignedUrl(doc.s3_key, 3600, getDownloadNameForDoc(doc)).catch(() => doc.file_url),
     }))
   );
 
@@ -143,6 +281,7 @@ const getDocument = async (req, res) => {
 
   if (!doc.is_deleted) {
     doc.presigned_url = await getPresignedUrl(doc.s3_key).catch(() => doc.file_url);
+    doc.download_url = await getPresignedUrl(doc.s3_key, 3600, getDownloadNameForDoc(doc)).catch(() => doc.file_url);
   }
 
   return sendSuccess(res, doc, 'Document fetched');
@@ -183,12 +322,27 @@ const updateDocument = async (req, res) => {
     }
     
     let fileBuffer = req.file.buffer;
+    const originalSize = fileBuffer.length;
+    
     if (['image/jpeg', 'image/png', 'image/webp'].includes(req.file.mimetype) && fileBuffer.length > MAX_FILE_SIZE) {
-      fileBuffer = await sharp(fileBuffer).resize({ width: 1920, withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
-      if (fileBuffer.length > MAX_FILE_SIZE) return sendError(res, 'File too large even after compression. Max 1MB allowed.', 400);
-    }
-    if (req.file.mimetype === 'application/pdf' && fileBuffer.length > MAX_FILE_SIZE) {
-      return sendError(res, 'PDF file size exceeds 1MB limit', 400);
+      try {
+        let quality = 85;
+        let width = 1920;
+        const targetSize = MAX_FILE_SIZE;
+        
+        fileBuffer = await sharp(req.file.buffer).resize({ width, withoutEnlargement: true }).jpeg({ quality, progressive: true }).toBuffer();
+        while (fileBuffer.length > targetSize && quality >= 10) {
+          quality = Math.max(10, quality - 8);
+          width = Math.round(width * 0.75);
+          fileBuffer = await sharp(req.file.buffer).resize({ width, withoutEnlargement: true }).jpeg({ quality, progressive: true }).toBuffer();
+        }
+        if (fileBuffer.length > targetSize) {
+          fileBuffer = await sharp(req.file.buffer).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 5, progressive: true }).toBuffer();
+        }
+        console.log(`Image compressed: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+      } catch (err) {
+        console.error('Image compression failed:', err.message);
+      }
     }
 
     const patientIdentifier = `${doc.patient_uhid}_${doc.patient_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -214,6 +368,19 @@ const updateDocument = async (req, res) => {
 
     // Delete old file asynchronously
     deleteFromS3(doc.s3_key).catch(err => console.error('Failed to delete old file from S3:', err));
+
+    // Trigger async compression for PDFs >= 2MB
+    if (req.file.mimetype === 'application/pdf' && originalSize >= 2 * 1024 * 1024) {
+      console.log(`Queuing async compression for document ${id} (${(originalSize / 1024 / 1024).toFixed(1)}MB)`);
+      const patientRes = await db.query('SELECT id, uhid, name FROM patients WHERE id = $1', [doc.patient_id]);
+      const patient = patientRes.rows[0];
+      if (patient) {
+        setImmediate(() => {
+          compressDocumentAsync(id, req.file.buffer, req.file.mimetype, newS3Key, patient, finalDocType)
+            .catch(err => console.error('Background compression error:', err));
+        });
+      }
+    }
   }
 
   const result = await db.query(
@@ -373,6 +540,7 @@ const getAllDocuments = async (req, res) => {
     docsRes.rows.map(async (doc) => ({
       ...doc,
       presigned_url: await getPresignedUrl(doc.s3_key).catch(() => doc.file_url),
+      download_url: await getPresignedUrl(doc.s3_key, 3600, getDownloadNameForDoc(doc)).catch(() => doc.file_url),
     }))
   );
 
@@ -421,6 +589,53 @@ const bulkDeleteDocuments = async (req, res) => {
   return sendSuccess(res, { deleted_count: deletableIds.length }, `Successfully deleted ${deletableIds.length} document(s)`);
 };
 
+/**
+ * Stream raw document file from S3 to bypass CORS issues on the frontend
+ */
+const downloadDocumentRaw = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const docRes = await db.query(
+      'SELECT s3_key, mime_type, file_name FROM documents WHERE id = $1 AND is_deleted = false',
+      [id]
+    );
+
+    if (!docRes.rows.length) {
+      return sendError(res, 'Document not found', 404);
+    }
+
+    const doc = docRes.rows[0];
+    const presignedUrl = await getPresignedUrl(doc.s3_key);
+    if (!presignedUrl) {
+      return sendError(res, 'Download URL could not be generated', 404);
+    }
+
+    res.setHeader('Content-Type', doc.mime_type);
+    res.setHeader('Content-Disposition', `attachment; filename="${doc.file_name}"`);
+
+    const httpModule = presignedUrl.startsWith('https') ? require('https') : require('http');
+    
+    httpModule.get(presignedUrl, (fileStream) => {
+      if (fileStream.statusCode !== 200) {
+        console.error(`S3 download returned status code ${fileStream.statusCode}`);
+        return sendError(res, 'Failed to fetch file from storage', 500);
+      }
+      fileStream.pipe(res);
+    }).on('error', (err) => {
+      console.error('Error streaming file from S3:', err);
+      if (!res.headersSent) {
+        sendError(res, 'Error downloading file', 500);
+      }
+    });
+  } catch (err) {
+    console.error('Download error:', err);
+    if (!res.headersSent) {
+      sendError(res, 'Download failed', 500);
+    }
+  }
+};
+
 module.exports = { 
   uploadDocument, 
   getPatientDocuments, 
@@ -429,5 +644,6 @@ module.exports = {
   deleteDocument, 
   bulkDeleteDocuments,
   exportPatientDocuments,
-  getAllDocuments
+  getAllDocuments,
+  downloadDocumentRaw
 };

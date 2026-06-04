@@ -169,7 +169,7 @@ export default function Layout() {
           className="flex-1 overflow-y-auto bg-gray-50"
           style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
         >
-          <div className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 animate-fade-in">
+          <div className="w-full p-3 sm:p-4 lg:p-6 animate-fade-in">
             <Outlet />
           </div>
         </main>

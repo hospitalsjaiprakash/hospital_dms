@@ -20,7 +20,8 @@ export default function NewPatientPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { register, handleSubmit, control, formState: { errors, isSubmitting }, setValue } = useForm();
+  const { register, handleSubmit, control, formState: { errors, isSubmitting }, setValue, watch } = useForm();
+  const docType = watch('doc_type');
 
   // Modal state for initial UHID/Name lookup
   const [showLookupModal, setShowLookupModal] = useState(true);
@@ -35,6 +36,7 @@ export default function NewPatientPage() {
   const [admissionHistory, setAdmissionHistory] = useState([]);
   const [docFiles, setDocFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const isRestricted = ['pcc', 'nursing'].includes(user?.role);
 
@@ -43,8 +45,8 @@ export default function NewPatientPage() {
     const val = value?.trim().toUpperCase();
     setLookupUhid(val);
     
-    // Auto-search when UHID is exactly 11 characters
-    if (val && val.length === 11 && /^[A-Z0-9]{11}$/.test(val)) {
+    // Auto-search when ID is exactly 11 or 16 characters
+    if (val && (val.length === 11 || val.length === 16) && /^([A-Z0-9]{11}|[A-Z0-9]{16})$/.test(val)) {
       setIsChecking(true);
       try {
         const res = await patientApi.getAll({ search: val, limit: 10 });
@@ -157,14 +159,44 @@ export default function NewPatientPage() {
       // Step 2: Upload all documents
       if (docFiles.length > 0) {
         setIsUploading(true);
+        setUploadProgress({ done: 0, total: docFiles.length, percent: 0, isCompressing: false });
         for (let i = 0; i < docFiles.length; i++) {
           const f = docFiles[i];
           const formData = new FormData();
-          const fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${f.type === 'pdf' ? 'pdf' : 'jpg'}`;
+          
+          const customFileNameInput = data.custom_file_name?.trim();
+          const ext = f.type === 'pdf' ? 'pdf' : 'jpg';
+          
+          let fileName;
+          if (data.doc_type === 'other' && customFileNameInput) {
+            const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
+            fileName = docFiles.length > 1
+              ? `${sanitized}_${i + 1}_${Date.now()}.${ext}`
+              : `${sanitized}_${Date.now()}.${ext}`;
+          } else {
+            fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${ext}`;
+          }
+
           formData.append('file', f.file, fileName);
           formData.append('patient_id', patientId);
           formData.append('doc_type', data.doc_type);
-          await documentApi.upload(formData);
+          if (data.doc_notes) {
+            formData.append('notes', data.doc_notes);
+          }
+          await documentApi.upload(formData, (progressEvent) => {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(prev => ({
+              ...prev,
+              percent,
+              isCompressing: percent >= 100,
+            }));
+          });
+          setUploadProgress(prev => ({
+            ...prev,
+            done: i + 1,
+            percent: 0,
+            isCompressing: false,
+          }));
         }
       }
 
@@ -189,15 +221,15 @@ export default function NewPatientPage() {
       {/* ===== LOOKUP MODAL ===== */}
       <Modal open={showLookupModal && !matchedPatient} onClose={handleCloseLookupModal} title="New Patient Registration">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">Enter patient UHID to check their registration status in the system.</p>
+          <p className="text-sm text-gray-600">Enter patient UHID or 16-digit Registration Number to check their status in the system.</p>
           
           {/* UHID Field */}
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID / Reg No. *</label>
             <div className="relative">
               <input
                 type="text"
-                maxLength={11}
+                maxLength={16}
                 placeholder="JPH20261234"
                 value={lookupUhid}
                 onChange={(e) => handleUhidChange(e.target.value.toUpperCase())}
@@ -209,7 +241,7 @@ export default function NewPatientPage() {
                 </div>
               )}
             </div>
-            <p className="text-xs text-gray-400">{lookupUhid.length}/11 characters</p>
+            <p className="text-xs text-gray-400">{lookupUhid.length}/16 characters (Valid: 11 or 16)</p>
           </div>
 
           {/* Name Field */}
@@ -229,7 +261,7 @@ export default function NewPatientPage() {
           </div>
 
           {/* Dynamic Status Alert Card */}
-          {lookupUhid.length === 11 && lookupResult && !isChecking && (
+          {(lookupUhid.length === 11 || lookupUhid.length === 16) && lookupResult && !isChecking && (
             <div className="animate-fade-in pt-1">
               {lookupResult.status === 'active' && (
                 <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -260,10 +292,10 @@ export default function NewPatientPage() {
 
             {(() => {
               // 1. Incomplete UHID
-              if (lookupUhid.length < 11) {
+              if (lookupUhid.length !== 11 && lookupUhid.length !== 16) {
                 return (
                   <Button variant="secondary" disabled className="flex-1 cursor-not-allowed opacity-50">
-                    Enter 11-Digit UHID
+                    Enter 11 or 16-Digit ID
                   </Button>
                 );
               }
@@ -365,7 +397,7 @@ export default function NewPatientPage() {
                 {/* UHID (read-only) */}
                 <div className="animate-slide-up">
                   <Input
-                    label="UHID"
+                    label="UHID / Reg No."
                     placeholder="JPH20261234"
                     required
                     icon={Hash}
@@ -394,9 +426,20 @@ export default function NewPatientPage() {
                     type="datetime-local"
                     required
                     icon={Calendar}
-                    max={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                    max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                     error={errors.admission_date?.message}
-                    {...register('admission_date', { required: 'Admission date and time is required' })}
+                    {...register('admission_date', { 
+                      required: 'Admission date and time is required',
+                      validate: (value) => {
+                        if (!value) return true;
+                        const selectedMs = new Date(value).getTime();
+                        const nowMs = Date.now();
+                        if (selectedMs > nowMs) {
+                          return 'Admission date cannot be in the future';
+                        }
+                        return true;
+                      }
+                    })}
                   />
                 </div>
               </div>
@@ -424,36 +467,62 @@ export default function NewPatientPage() {
                 />
 
                 {docFiles.length > 0 && (
-                  <div className="mt-3 space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
-                    <Controller
-                      name="doc_type"
-                      control={control}
-                      rules={{ required: docFiles.length > 0 ? 'Please select document type' : false }}
-                      render={({ field }) => (
-                        <ReactSelect
-                          {...field}
-                          options={DOC_TYPES}
-                          value={DOC_TYPES.find(c => c.value === field.value) || null}
-                          onChange={val => field.onChange(val.value)}
-                          placeholder="Search or select type..."
-                          className="text-sm"
-                          menuPortalTarget={document.body}
-                          styles={{
-                            control: (base, state) => ({
-                              ...base,
-                              borderColor: errors.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
-                              borderRadius: '0.5rem',
-                              minHeight: '42px',
-                              boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
-                              '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
-                            }),
-                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                          }}
+                  <div className="space-y-3">
+                    <div className="mt-3 space-y-1">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
+                      <Controller
+                        name="doc_type"
+                        control={control}
+                        rules={{ required: docFiles.length > 0 ? 'Please select document type' : false }}
+                        render={({ field }) => (
+                          <ReactSelect
+                            {...field}
+                            options={DOC_TYPES}
+                            value={DOC_TYPES.find(c => c.value === field.value) || null}
+                            onChange={val => field.onChange(val.value)}
+                            placeholder="Search or select type..."
+                            className="text-sm"
+                            menuPortalTarget={document.body}
+                            styles={{
+                              control: (base, state) => ({
+                                ...base,
+                                borderColor: errors.doc_type ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#e5e7eb'),
+                                borderRadius: '0.5rem',
+                                minHeight: '42px',
+                                boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                                '&:hover': { borderColor: state.isFocused ? '#3b82f6' : '#d1d5db' }
+                              }),
+                              menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                            }}
+                          />
+                        )}
+                      />
+                      {errors.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                    </div>
+
+                    {docType === 'other' && (
+                      <div className="space-y-1 animate-fade-in">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Rename File / Custom File Name</label>
+                        <input
+                          placeholder="Enter custom file name (optional)..."
+                          className={clsx(
+                            "w-full rounded-lg border px-3 py-2 min-h-[42px] text-sm focus:ring-2 focus:border-transparent outline-none transition-colors",
+                            errors.custom_file_name ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                          )}
+                          {...register('custom_file_name')}
                         />
-                      )}
-                    />
-                    {errors.doc_type && <p className="text-xs text-red-500 mt-1">{errors.doc_type.message}</p>}
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Notes <span className="text-gray-400 font-normal normal-case">(Optional)</span></label>
+                      <textarea
+                        rows={2}
+                        placeholder="Add any relevant notes or remarks about this document..."
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 hover:border-gray-300 transition-colors outline-none resize-none"
+                        {...register('doc_notes')}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -474,7 +543,12 @@ export default function NewPatientPage() {
                   loading={isCreating || isUploading || isSubmitting}
                   className="w-full sm:w-auto"
                 >
-                  {isUploading ? `Uploading ${docFiles.length} file(s)...` : (isReadmission ? 'Re-admit Patient' : 'Create Patient')}
+                  {isUploading && uploadProgress
+                    ? (uploadProgress.isCompressing
+                      ? `Compressing file ${uploadProgress.done + 1}/${uploadProgress.total}, please wait...`
+                      : `Uploading file ${uploadProgress.done + 1}/${uploadProgress.total} (${uploadProgress.percent || 0}%)`)
+                    : (isReadmission ? 'Re-admit Patient' : 'Create Patient')
+                  }
                 </Button>
               </div>
             </form>

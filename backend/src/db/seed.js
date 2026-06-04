@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const bcrypt = require('bcryptjs');
 const db = require('./index');
 const logger = require('../utils/logger');

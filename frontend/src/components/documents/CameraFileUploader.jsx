@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
-import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn, Scan } from 'lucide-react';
+import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn, Scan, Zap, ZapOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
@@ -44,6 +44,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [liveTime, setLiveTime] = useState(new Date());
   const [watchId, setWatchId] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   // True when viewport is mobile/tablet (< 1024px = below lg breakpoint)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024);
@@ -117,6 +119,18 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       streamRef.current = mediaStream;
       setMode('camera');
 
+      const track = mediaStream.getVideoTracks()[0];
+      if (track) {
+        try {
+          const capabilities = track.getCapabilities();
+          if (capabilities.torch) {
+            setHasTorch(true);
+          }
+        } catch (e) {
+          // getCapabilities might not be supported
+        }
+      }
+
       // Start GPS tracking for live overlay
       const id = navigator.geolocation.watchPosition(
         async (pos) => {
@@ -141,6 +155,19 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     } catch (err) {
       console.error('Camera error:', err);
       toast.error('Could not access camera. Please allow camera permission.');
+    }
+  };
+
+  const toggleTorch = async () => {
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (track) {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
+        setTorchOn(!torchOn);
+      } catch (err) {
+        console.error("Torch error", err);
+      }
     }
   };
 
@@ -277,7 +304,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const rawFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
       setCompressing(true);
-      const compressed = await imageCompression(rawFile, { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true });
+      const compressed = await imageCompression(rawFile, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
       const newEntry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
 
       setStagedPhoto(newEntry);
@@ -297,58 +324,85 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     handleChange(files.filter((_, i) => i !== index));
   };
 
+  const processFile = async (f) => {
+    if (f.type.startsWith('image/')) {
+      try {
+        const compressed = await imageCompression(f, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
+        return { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
+      } catch {
+        toast.error('Image compression failed');
+        return null;
+      }
+    } else if (f.type === 'application/pdf') {
+      if (f.size > 200 * 1024 * 1024) { 
+        toast.error(`PDF is ${(f.size / 1024 / 1024).toFixed(2)}MB. Each PDF must be under 200MB.`); 
+        return null; 
+      }
+      return { file: f, preview: null, type: 'pdf' };
+    } else {
+      toast.error('Unsupported file type');
+      return null;
+    }
+  };
+
   const processAndSetFile = async (f) => {
-    // Check if total count will exceed 5
-    if (!(isLegacySingle || single) && files.length >= 5) {
-      toast.error('Maximum 5 files allowed in total');
+    // Check if total count will exceed 10
+    if (!(isLegacySingle || single) && files.length >= 10) {
+      toast.error('Maximum 10 files allowed from Gallery/Scanner');
       return;
     }
 
-    if (f.type.startsWith('image/')) {
-      setCompressing(true);
-      try {
-        const compressed = await imageCompression(f, { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true });
-        const entry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
+    setCompressing(true);
+    try {
+      const entry = await processFile(f);
+      if (entry) {
         if (isLegacySingle || single) {
           handleChange([entry]);
         } else {
           handleChange([...files, entry]);
         }
-      } catch { toast.error('Compression failed'); }
-      finally { setCompressing(false); }
-    } else if (f.type === 'application/pdf') {
-      if (f.size > 1.5 * 1024 * 1024) { 
-        toast.error(`PDF is ${(f.size / 1024 / 1024).toFixed(2)}MB. Each PDF must be under 1.5MB.`); 
-        return; 
       }
-      const entry = { file: f, preview: null, type: 'pdf' };
-      if (isLegacySingle || single) {
-        handleChange([entry]);
-      } else {
-        handleChange([...files, entry]);
-      }
-    } else {
-      toast.error('Unsupported file type');
+    } finally {
+      setCompressing(false);
     }
   };
 
   const onDrop = useCallback(async (acceptedFiles) => {
-    const spaceLeft = (isLegacySingle || single) ? 1 - files.length : 5 - files.length;
+    const spaceLeft = (isLegacySingle || single) ? 1 - files.length : 10 - files.length;
     if (spaceLeft <= 0) {
-      toast.error('Maximum 5 files allowed in total');
+      toast.error('Maximum 10 files allowed from Gallery');
       return;
     }
     const filesToProcess = acceptedFiles.slice(0, spaceLeft);
     if (acceptedFiles.length > spaceLeft) {
-      toast.error('Only the first 5 files will be processed');
+      toast.error('Only the first 10 files will be processed');
     }
-    for (const f of filesToProcess) await processAndSetFile(f);
+
+    setCompressing(true);
+    try {
+      const newEntries = [];
+      for (const f of filesToProcess) {
+        const entry = await processFile(f);
+        if (entry) {
+          newEntries.push(entry);
+        }
+      }
+      if (newEntries.length > 0) {
+        if (isLegacySingle || single) {
+          handleChange([newEntries[newEntries.length - 1]]);
+        } else {
+          handleChange([...files, ...newEntries]);
+        }
+      }
+    } finally {
+      setCompressing(false);
+    }
   }, [files, isLegacySingle, single]);
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: { 'image/jpeg': [], 'image/png': [], 'image/*': [], 'application/pdf': [] },
-    maxFiles: (isLegacySingle || single) ? 1 : 5,
+    maxFiles: (isLegacySingle || single) ? 1 : 10,
     disabled: disabled || compressing || mode === 'camera',
     noClick: true, // Trigger manually via dedicated button
   });
@@ -357,11 +411,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   if (mode === 'camera') {
     if (stagedPhoto) {
       return createPortal(
-        <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col h-[100dvh] w-full overflow-hidden touch-none">
-          <div className="flex-1 relative bg-black flex items-center justify-center">
+        <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col overflow-hidden touch-none">
+          <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden">
             <img src={stagedPhoto.preview} alt="Captured preview" className="w-full h-full object-contain" />
           </div>
-          <div className="h-28 bg-gray-900 border-t border-white/10 flex items-center justify-around px-4">
+          <div 
+            className="bg-gray-900 border-t border-white/10 flex items-center justify-around px-4 flex-shrink-0"
+            style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1.5rem', height: 'auto', minHeight: '7rem' }}
+          >
             <button
               onClick={() => setStagedPhoto(null)}
               className="text-white/70 font-bold px-6 py-3 rounded-xl hover:bg-white/10 transition-colors"
@@ -375,6 +432,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
                   handleChange([stagedPhoto]);
                   stopCamera();
                 } else {
+                  if (files.length >= 20) {
+                    toast.error('Maximum 20 photos allowed from Camera');
+                    return;
+                  }
                   const updated = [...files, stagedPhoto];
                   handleChange(updated);
                   setStagedPhoto(null);
@@ -391,7 +452,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     }
 
     return createPortal(
-      <div className="fixed inset-0 z-[9999] bg-black flex flex-col h-[100dvh] w-full overflow-hidden touch-none">
+      <div className="fixed inset-0 z-[9999] bg-black flex flex-col overflow-hidden touch-none">
         {/* Video Preview */}
         <div className="relative flex-1 bg-black overflow-hidden">
           <video
@@ -478,6 +539,17 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
               </div>
             )}
           </div>
+
+          {/* Torch Button */}
+          {hasTorch && (
+            <button 
+              type="button" onClick={toggleTorch}
+              className="absolute right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
+              style={{ top: 'calc(4rem + env(safe-area-inset-top, 0px))' }}
+            >
+              {torchOn ? <Zap size={20} className="text-yellow-400" fill="currentColor" /> : <ZapOff size={20} />}
+            </button>
+          )}
 
           {/* Close Button */}
           <button 
@@ -613,11 +685,11 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <button
             type="button"
             onClick={startCamera}
-            disabled={disabled || compressing}
+            disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 20)}
             className={clsx(
               "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
               "border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 group",
-              (disabled || compressing) && "opacity-60 cursor-not-allowed"
+              (disabled || compressing || (!(isLegacySingle || single) && files.length >= 20)) && "opacity-60 cursor-not-allowed"
             )}
           >
             <div className="relative w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
@@ -633,12 +705,20 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         {/* Option 2: System File Picker - Always visible */}
         <div
           {...getRootProps()}
-          onClick={open}
+          onClick={(e) => {
+             if (!(isLegacySingle || single) && files.length >= 10) {
+               e.preventDefault();
+               e.stopPropagation();
+               toast.error('Maximum 10 files allowed from Gallery');
+               return;
+             }
+             open();
+          }}
           className={clsx(
             "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 border-dashed transition-all cursor-pointer",
             isMobile ? "" : "flex-1",
             isDragActive ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50/30 hover:border-gray-300 hover:bg-gray-50",
-            (disabled || compressing) && "opacity-60 cursor-not-allowed pointer-events-none"
+            (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
         >
           <input {...getInputProps()} />
@@ -653,11 +733,11 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <button
             type="button"
             onClick={() => setScannerOpen(true)}
-            disabled={disabled || compressing}
+            disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)}
             className={clsx(
               "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
               "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
-              (disabled || compressing) && "opacity-60 cursor-not-allowed"
+              (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed"
             )}
           >
             <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">

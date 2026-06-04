@@ -19,7 +19,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
   const [uploadProgress, setUploadProgress] = useState(null);
   
   const { register, handleSubmit, control, formState: { errors }, reset, watch } = useForm({
-    defaultValues: { doc_type: '', specify_reason: '', notes: '' }
+    defaultValues: { doc_type: '', custom_file_name: '', notes: '' }
   });
 
   const docType = watch('doc_type');
@@ -46,7 +46,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
       return;
     }
 
-    setUploadProgress({ done: 0, total: files.length });
+    setUploadProgress({ done: 0, total: files.length, currentPercent: 0, isCompressing: false });
     let successCount = 0;
 
     for (let i = 0; i < files.length; i++) {
@@ -54,28 +54,43 @@ export default function DocumentUpload({ patientId, open, onClose }) {
         const fileItem = files[i];
         const formData = new FormData();
         
-        let fileName = fileItem.name;
-        if (!fileName || fileName === 'blob' || fileName === 'image') {
-          const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
-          fileName = `${docType}_${i + 1}_${Date.now()}.${ext}`;
-        } else if (!fileName.includes('.')) {
-          const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
-          fileName = `${fileName}.${ext}`;
+        const customFileNameInput = watch('custom_file_name')?.trim();
+        const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
+        
+        let fileName;
+        if (docType === 'other' && customFileNameInput) {
+          const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
+          fileName = files.length > 1
+            ? `${sanitized}_${i + 1}_${Date.now()}.${ext}`
+            : `${sanitized}_${Date.now()}.${ext}`;
+        } else {
+          fileName = fileItem.name;
+          if (!fileName || fileName === 'blob' || fileName === 'image') {
+            fileName = `${docType}_${i + 1}_${Date.now()}.${ext}`;
+          } else if (!fileName.includes('.')) {
+            fileName = `${fileName}.${ext}`;
+          }
         }
 
         formData.append('file', fileItem.file, fileName);
         formData.append('patient_id', patientId);
         formData.append('doc_type', docType);
-        const specifyReason = watch('specify_reason');
-        const effectiveNotes = notes || (docType === 'other' && specifyReason ? specifyReason : '');
+        const effectiveNotes = notes?.trim() || '';
         if (effectiveNotes) formData.append('notes', effectiveNotes);
         
-        await documentApi.upload(formData);
+        await documentApi.upload(formData, (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(prev => ({
+            ...prev,
+            currentPercent: percent,
+            isCompressing: percent >= 100,
+          }));
+        });
         successCount++;
       } catch (err) {
         toast.error(`File ${i + 1} failed: ${err.message}`);
       }
-      setUploadProgress({ done: i + 1, total: files.length });
+      setUploadProgress(prev => ({ ...prev, done: i + 1, currentPercent: 0, isCompressing: false }));
     }
 
     if (successCount > 0) {
@@ -102,7 +117,7 @@ export default function DocumentUpload({ patientId, open, onClose }) {
               disabled={isUploading} 
             />
 
-            <div className={clsx("grid gap-3", docType === 'other' ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
+            <div className="space-y-3">
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Type *</label>
                 <Controller
@@ -137,16 +152,15 @@ export default function DocumentUpload({ patientId, open, onClose }) {
 
               {docType === 'other' && (
                 <div className="space-y-1 animate-fade-in">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Specify Document / Reason *</label>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Rename File / Custom File Name</label>
                   <input
-                    placeholder="Enter document reason or type..."
+                    placeholder="Enter custom file name (optional)..."
                     className={clsx(
                       "w-full rounded-lg border px-3 py-2 min-h-[42px] text-sm focus:ring-2 focus:border-transparent outline-none transition-colors",
-                      errors.specify_reason ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
+                      errors.custom_file_name ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
                     )}
-                    {...register('specify_reason', { required: 'Please specify the document type or reason' })}
+                    {...register('custom_file_name')}
                   />
-                  {errors.specify_reason && <p className="text-xs text-red-500 mt-1">{errors.specify_reason.message}</p>}
                 </div>
               )}
             </div>
@@ -176,15 +190,26 @@ export default function DocumentUpload({ patientId, open, onClose }) {
         )}
 
         {/* Upload Progress */}
-        {isUploading && (
+        {isUploading && uploadProgress.done < uploadProgress.total && (
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <p className="text-sm font-semibold text-gray-700 mb-3">
-              Uploading... ({uploadProgress.done}/{uploadProgress.total})
+            <p className="text-sm font-semibold text-gray-700 mb-2">
+              {uploadProgress.isCompressing 
+                ? `🔄 Compressing file ${uploadProgress.done + 1}/${uploadProgress.total}...`
+                : `📤 Uploading file ${uploadProgress.done + 1}/${uploadProgress.total}... (${uploadProgress.currentPercent || 0}%)`
+              }
             </p>
+            {uploadProgress.isCompressing && (
+              <p className="text-xs text-gray-500 mb-2">
+                This may take a moment for large PDFs. Do not close this window.
+              </p>
+            )}
             <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
               <div 
-                className="bg-blue-600 h-full transition-all duration-300"
-                style={{ width: `${(uploadProgress.done / uploadProgress.total) * 100}%` }}
+                className={clsx(
+                  "h-full transition-all duration-300",
+                  uploadProgress.isCompressing ? "bg-amber-500 animate-pulse w-full" : "bg-blue-600"
+                )}
+                style={{ width: uploadProgress.isCompressing ? '100%' : `${uploadProgress.currentPercent || 0}%` }}
               />
             </div>
           </div>

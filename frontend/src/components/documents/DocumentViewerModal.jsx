@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
-import { Download, FileText, User, X, ZoomIn, File, Trash2, Edit2 } from 'lucide-react';
+import { Download, FileText, User, X, ZoomIn, File, Trash2, Edit2, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
@@ -20,31 +21,26 @@ export default function DocumentViewerModal({ doc, onClose }) {
     ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${API_URL}${doc.presigned_url}`)
     : null;
 
+  const isCompressing = doc.mime_type === 'application/pdf' &&
+    doc.file_size >= 2 * 1024 * 1024 &&
+    !doc.is_compressed &&
+    (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000;
+
   const handleDownload = () => {
-    if (!fileUrl) {
+    if (isCompressing) {
+      toast('PDF is currently being optimized. Please wait a moment.', { icon: '⏳' });
+      return;
+    }
+
+    const downloadUrl = doc.download_url || fileUrl;
+    if (!downloadUrl) {
       toast.error('File not available');
       return;
     }
     
-    let downloadName = doc.file_name || 'document';
-    if (downloadName === 'blob' || downloadName === 'image') {
-      downloadName = `${DOC_TYPE_LABELS[doc.doc_type] || 'document'}_${new Date(doc.created_at).getTime()}`;
-    }
-    
-    if (!downloadName.includes('.')) {
-      if (doc.mime_type === 'application/pdf') downloadName += '.pdf';
-      else if (doc.mime_type === 'image/jpeg') downloadName += '.jpg';
-      else if (doc.mime_type === 'image/png') downloadName += '.png';
-      else downloadName += '.jpg';
-    }
-
-    const downloadUrl = fileUrl.includes('?') 
-      ? `${fileUrl}&download=${encodeURIComponent(downloadName)}` 
-      : `${fileUrl}?download=${encodeURIComponent(downloadName)}`;
-
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.download = downloadName;
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -58,8 +54,8 @@ export default function DocumentViewerModal({ doc, onClose }) {
   const onDelete = doc.onDelete;
   const onEdit = doc.onEdit;
 
-  return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-black/95 safe-area-inset">
+  return createPortal(
+    <div className="fixed inset-0 z-[110] flex flex-col bg-black/95 safe-area-inset">
       {/* Header */}
       <div className="flex items-center justify-between px-3 sm:px-5 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -87,13 +83,23 @@ export default function DocumentViewerModal({ doc, onClose }) {
               </button>
             </>
           )}
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
-          >
-            <Download size={14} />
-            <span className="hidden xs:inline">Download</span>
-          </button>
+          {isCompressing ? (
+            <button
+              onClick={() => toast('PDF is currently being optimized. Please wait a moment.', { icon: '⏳' })}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors cursor-wait animate-pulse"
+            >
+              <Clock size={14} className="animate-spin" />
+              <span className="hidden xs:inline">Optimizing...</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              <Download size={14} />
+              <span className="hidden xs:inline">Download</span>
+            </button>
+          )}
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
@@ -157,6 +163,7 @@ export default function DocumentViewerModal({ doc, onClose }) {
         </div>
         <span>{format(new Date(doc.created_at), 'dd MMM yyyy, hh:mm a')}</span>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

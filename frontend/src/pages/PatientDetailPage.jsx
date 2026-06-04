@@ -31,15 +31,18 @@ const API_URL = window.location.hostname === 'localhost'
 
 const STATUS_COLORS = {
   active: 'green', discharged: 'blue',
-  pending: 'amber', completed: 'green',
+  document_submission: 'indigo', pending: 'amber', completed: 'green',
+  none: 'gray'
 };
 
 // ── Readmit Form (full-page, same as NewPatientPage readmit flow) ─────────────
 function ReadmitModal({ patient, open, onClose }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [docFiles, setDocFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const { register, handleSubmit, control, watch, formState: { errors, isSubmitting }, reset } = useForm({
     defaultValues: {
@@ -76,6 +79,7 @@ function ReadmitModal({ patient, open, onClose }) {
       // Step 2: Upload initial documents if any
       if (docFiles.length > 0) {
         setIsUploading(true);
+        setUploadProgress({ done: 0, total: docFiles.length, percent: 0, isCompressing: false });
         for (let i = 0; i < docFiles.length; i++) {
           const f = docFiles[i];
           const formData = new FormData();
@@ -83,7 +87,20 @@ function ReadmitModal({ patient, open, onClose }) {
           formData.append('file', f.file, fileName);
           formData.append('patient_id', newPatientId);
           formData.append('doc_type', data.doc_type);
-          await documentApi.upload(formData);
+          await documentApi.upload(formData, (progressEvent) => {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(prev => ({
+              ...prev,
+              percent,
+              isCompressing: percent >= 100,
+            }));
+          });
+          setUploadProgress(prev => ({
+            ...prev,
+            done: i + 1,
+            percent: 0,
+            isCompressing: false,
+          }));
         }
       }
 
@@ -177,7 +194,18 @@ function ReadmitModal({ patient, open, onClose }) {
                         'w-full rounded-lg border pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500',
                         errors.admission_date ? 'border-red-400' : 'border-gray-200'
                       )}
-                      {...register('admission_date', { required: 'Admission date and time is required' })}
+                      {...register('admission_date', { 
+                        required: 'Admission date and time is required',
+                        validate: (value) => {
+                          if (!value) return true;
+                          const selectedMs = new Date(value).getTime();
+                          const nowMs = Date.now();
+                          if (selectedMs > nowMs) {
+                            return 'Admission date cannot be in the future';
+                          }
+                          return true;
+                        }
+                      })}
                     />
                   </div>
                   {errors.admission_date && <p className="text-xs text-red-500 mt-1">{errors.admission_date.message}</p>}
@@ -257,7 +285,12 @@ function ReadmitModal({ patient, open, onClose }) {
                   loading={isSubmitting || isUploading}
                   className="w-full sm:w-auto"
                 >
-                  {isUploading ? `Uploading ${docFiles.length} file(s)...` : 'Re-admit Patient'}
+                  {isUploading && uploadProgress
+                    ? (uploadProgress.isCompressing
+                      ? `Compressing file ${uploadProgress.done + 1}/${uploadProgress.total}, please wait...`
+                      : `Uploading file ${uploadProgress.done + 1}/${uploadProgress.total} (${uploadProgress.percent || 0}%)`)
+                    : 'Re-admit Patient'
+                  }
                 </Button>
               </div>
             </form>
@@ -274,6 +307,7 @@ function EditPatientModal({ patient, open, onClose }) {
   const { user } = useAuth();
   const [docFile, setDocFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
     defaultValues: {
@@ -285,7 +319,8 @@ function EditPatientModal({ patient, open, onClose }) {
       hospital_status: patient.hospital_status,
       settlement_status: patient.settlement_status || 'none',
       discharge_date: (patient.hospital_status === 'discharged' && patient.discharge_date) ? new Date(new Date(patient.discharge_date).getTime() - new Date(patient.discharge_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
-      pending_date: (patient.settlement_status !== 'none' && patient.pending_date) ? new Date(new Date(patient.pending_date).getTime() - new Date(patient.pending_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      document_submission_date: (patient.settlement_status !== 'none' && patient.document_submission_date) ? new Date(new Date(patient.document_submission_date).getTime() - new Date(patient.document_submission_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
+      pending_date: (['pending', 'completed'].includes(patient.settlement_status) && patient.pending_date) ? new Date(new Date(patient.pending_date).getTime() - new Date(patient.pending_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
       settlement_date: (patient.settlement_status === 'completed' && patient.settlement_date) ? new Date(new Date(patient.settlement_date).getTime() - new Date(patient.settlement_date).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
     }
   });
@@ -294,12 +329,10 @@ function EditPatientModal({ patient, open, onClose }) {
   const watchSettlementStatus = watch('settlement_status');
 
   React.useEffect(() => {
-    // If the user is discharging the patient, automatically ensure settlement_status doesn't blindly default to pending unless it was already pending. 
-    // Actually, we'll let them explicitly check the box if they want pending.
-    if (watchHospitalStatus === 'discharged' && patient.hospital_status === 'active' && patient.settlement_status !== 'pending') {
+    if (watchHospitalStatus === 'active') {
       setValue('settlement_status', 'none');
     }
-  }, [watchHospitalStatus, patient.hospital_status, patient.settlement_status, setValue]);
+  }, [watchHospitalStatus, setValue]);
 
   const { mutateAsync, isLoading } = useMutation(
     (data) => patientApi.update(patient.id, data)
@@ -315,9 +348,12 @@ function EditPatientModal({ patient, open, onClose }) {
         delete payload.hospital_status;
         delete payload.settlement_status;
         delete payload.discharge_date;
+        delete payload.document_submission_date;
+        delete payload.pending_date;
         delete payload.settlement_date;
       } else {
         if (payload.discharge_date === '') payload.discharge_date = null;
+        if (payload.document_submission_date === '') payload.document_submission_date = null;
         if (payload.pending_date === '') payload.pending_date = null;
         if (payload.settlement_date === '') payload.settlement_date = null;
       }
@@ -326,11 +362,19 @@ function EditPatientModal({ patient, open, onClose }) {
 
       if (docFile && watchHospitalStatus === 'discharged' && !isRestricted) {
         setIsUploading(true);
+        setUploadProgress({ done: 0, total: 1, percent: 0, isCompressing: false });
         const formData = new FormData();
         formData.append('file', docFile.file);
         formData.append('patient_id', patient.id);
         formData.append('doc_type', 'discharge_summary');
-        await documentApi.upload(formData);
+        await documentApi.upload(formData, (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(prev => ({
+            ...prev,
+            percent,
+            isCompressing: percent >= 100,
+          }));
+        });
       }
 
       queryClient.invalidateQueries(['patient', patient.id]);
@@ -347,164 +391,255 @@ function EditPatientModal({ patient, open, onClose }) {
     }
   };
 
+  const getSettlementOptions = () => {
+    if (user?.role === 'admin') {
+      return [
+        { value: 'none', label: 'Discharged (None)' },
+        { value: 'document_submission', label: 'Document Submission' },
+        { value: 'pending', label: 'PMJAY Pending' },
+        { value: 'completed', label: 'PMJAY Settled' }
+      ];
+    }
+
+    const current = patient.settlement_status || 'none';
+    if (current === 'none') {
+      return [
+        { value: 'none', label: 'Discharged (None)' },
+        { value: 'document_submission', label: 'Move to Document Submission' }
+      ];
+    }
+    if (current === 'document_submission') {
+      return [
+        { value: 'document_submission', label: 'Document Submission' },
+        { value: 'pending', label: 'Move to PMJAY Pending' }
+      ];
+    }
+    if (current === 'pending') {
+      return [
+        { value: 'pending', label: 'PMJAY Pending' },
+        { value: 'completed', label: 'Move to PMJAY Settled' }
+      ];
+    }
+    if (current === 'completed') {
+      return [
+        { value: 'completed', label: 'PMJAY Settled' }
+      ];
+    }
+    return [{ value: 'none', label: 'None' }];
+  };
+
   return (
-    <Modal open={open} onClose={onClose} title="Edit Patient">
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0 -m-5">
-
-        {/* ── Scrollable Body ── */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
-              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                {...register('name', { required: 'Name required' })} />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
-              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                {...register('ip_number', { required: 'IP required' })} />
-              {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
-              <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                {...register('uhid', { 
-                  required: 'UHID required',
-                  pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
-                })} />
-              {errors.uhid && <p className="text-xs text-red-500">{errors.uhid.message}</p>}
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Admission Date & Time *</label>
-              <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                {...register('admission_date', { required: 'Admission date required' })} />
-              {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
-            </div>
+    <Modal 
+      open={open} 
+      onClose={onClose} 
+      title="Edit Patient"
+      footer={
+        <div className="flex gap-3 w-full">
+          <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isLoading || isUploading}>Cancel</Button>
+          <Button type="submit" form="edit-patient-form" loading={isLoading || isUploading} className="flex-1">
+            {isUploading && uploadProgress
+              ? (uploadProgress.isCompressing 
+                ? 'Compressing file, please wait...' 
+                : `Uploading file (${uploadProgress.percent || 0}%)`)
+              : 'Save Changes'
+            }
+          </Button>
+        </div>
+      }
+    >
+      <form id="edit-patient-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('name', { required: 'Name required' })} />
+            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('ip_number', { required: 'IP required' })} />
+            {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('uhid', { 
+                required: 'UHID required',
+                pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
+              })} />
+            {errors.uhid && <p className="text-xs text-red-500">{errors.uhid.message}</p>}
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
-            <textarea 
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
-              {...register('notes')}
-              placeholder="Additional notes..."
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Admission Date & Time *</label>
+            <input 
+              type="datetime-local" 
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              {...register('admission_date', { 
+                required: 'Admission date required',
+                validate: (value) => {
+                  if (!value) return true;
+                  const selectedMs = new Date(value).getTime();
+                  const nowMs = Date.now();
+                  
+                  // Allow if it matches the original date (with 1 minute tolerance for truncation)
+                  if (patient.admission_date) {
+                    const originalMs = new Date(patient.admission_date).getTime();
+                    if (Math.abs(selectedMs - originalMs) < 60000) {
+                      return true;
+                    }
+                  }
+
+                  if (selectedMs > nowMs) {
+                    return 'Admission date cannot be in the future';
+                  }
+                  return true;
+                }
+              })} 
             />
+            {errors.admission_date && <p className="text-xs text-red-500">{errors.admission_date.message}</p>}
           </div>
+        </div>
 
-          {!isRestricted && (
-            <>
-              {/* Hospital Status */}
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
-                <select className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  {...register('hospital_status')}>
-                  <option value="active">Active (Admitted)</option>
-                  <option value="discharged">Discharged</option>
-                </select>
-              </div>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
+          <textarea 
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
+            {...register('notes')}
+            placeholder="Additional notes..."
+          />
+        </div>
 
-              {/* Discharge fields — only when discharged */}
-              {watchHospitalStatus === 'discharged' && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Discharge Date & Time</label>
-                    <input type="datetime-local" className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                      {...register('discharge_date', {
-                        validate: (value) => {
-                          if (!value) return true;
-                          const selectedMs = new Date(value).getTime();
-                          const admissionMs = patient.admission_date ? new Date(patient.admission_date).getTime() : 0;
-                          if (admissionMs && selectedMs < admissionMs) {
-                            return 'Discharge date cannot be before admission';
-                          }
-                          return true;
-                        }
-                      })} />
-                    <p className="text-xs text-gray-500 mt-1">Leave blank to use the current date/time automatically.</p>
-                    {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
-                  </div>
-
-                  <div className="space-y-2 mt-2">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement</label>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'none' ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
-                        <input type="radio" value="none" {...register('settlement_status')} className="w-4 h-4 text-gray-600 border-gray-300 focus:ring-gray-500" />
-                        <span className="text-sm font-semibold text-gray-800">None</span>
-                      </label>
-                      
-                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'pending' ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
-                        <input type="radio" value="pending" {...register('settlement_status')} className="w-4 h-4 text-amber-600 border-gray-300 focus:ring-amber-500" />
-                        <span className="text-sm font-semibold text-gray-800">Pending</span>
-                      </label>
-
-                      <label className={clsx("flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors", watchSettlementStatus === 'completed' ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200 hover:bg-gray-50')}>
-                        <input type="radio" value="completed" {...register('settlement_status')} className="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500" />
-                        <span className="text-sm font-semibold text-gray-800">Settled</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* PMJAY Pending Date — only when discharged AND settlement pending or completed */}
-                  {(watchSettlementStatus === 'pending' || watchSettlementStatus === 'completed') && (
-                    <div className="space-y-1">
-                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Pending Date & Time</label>
-                      <input
-                        type="datetime-local"
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        {...register('pending_date')}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
-                    </div>
-                  )}
-
-                  {/* PMJAY Settlement Date — only when discharged AND settlement completed */}
-                  {watchSettlementStatus === 'completed' && (
-                    <div className="space-y-1">
-                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
-                      <input
-                        type="datetime-local"
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        {...register('settlement_date')}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Leave blank to use current date/time automatically.</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-1 p-3 bg-gray-50 border border-gray-100 rounded-xl">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Upload Discharge Summary (Optional)</label>
-                    <CameraFileUploader file={docFile} onChange={setDocFile} disabled={isLoading || isUploading} />
-                  </div>
-                </div>
+        {!isRestricted && (
+          <>
+            {/* Hospital Status */}
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
+              <select 
+                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={patient.hospital_status === 'discharged' && user?.role !== 'admin'}
+                {...register('hospital_status')}
+              >
+                <option value="active">Active (Admitted)</option>
+                <option value="discharged">Discharged</option>
+              </select>
+              {patient.hospital_status === 'discharged' && user?.role !== 'admin' && (
+                <p className="text-[10px] text-gray-400">Status cannot be changed back to Active. Use the "Re-admit" action on the patient page to admit them again.</p>
               )}
-            </>
-          )}
-
-          {/* Global Validation Errors */}
-          {Object.keys(errors).length > 0 && (
-            <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-start gap-2.5 shadow-sm animate-pulse">
-              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-semibold block">Please correct the following errors:</span>
-                <ul className="list-disc pl-4 space-y-0.5 font-medium font-sans">
-                  {Object.entries(errors).map(([key, err]) => (
-                    <li key={key}>{err.message || `${key} has an error`}</li>
-                  ))}
-                </ul>
-              </div>
+              {patient.hospital_status === 'discharged' && user?.role === 'admin' && (
+                <p className="text-[10px] text-amber-500 font-medium">Admin access: You can revert to Active. This will clear all discharge and settlement dates.</p>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* ── Sticky Footer — always visible at bottom ── */}
-        <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-gray-100 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-          <Button variant="secondary" type="button" onClick={onClose} className="flex-1" disabled={isLoading || isUploading}>Cancel</Button>
-          <Button type="submit" loading={isLoading || isUploading} className="flex-1">
-            {isUploading ? 'Uploading...' : 'Save Changes'}
-          </Button>
-        </div>
+            {/* Discharge fields — only when discharged */}
+            {watchHospitalStatus === 'discharged' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Discharge Date & Time</label>
+                  <input 
+                    type="datetime-local" 
+                    max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    {...register('discharge_date', {
+                      validate: (value) => {
+                        if (!value) return true;
+                        const selectedMs = new Date(value).getTime();
+                        const admissionMs = patient.admission_date ? new Date(patient.admission_date).getTime() : 0;
+                        if (admissionMs && selectedMs < admissionMs) {
+                          return 'Discharge date cannot be before admission';
+                        }
+                        const nowMs = Date.now();
+                        if (selectedMs > nowMs) {
+                          return 'Discharge date cannot be in the future';
+                        }
+                        return true;
+                      }
+                    })} 
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Leave blank to use the current date/time automatically.</p>
+                  {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
+                </div>
+
+                {/* PMJAY Settlement Dropdown */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Status</label>
+                  <select 
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    {...register('settlement_status')}
+                  >
+                    {getSettlementOptions().map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Document Submission Date */}
+                {(watchSettlementStatus === 'document_submission' || patient.settlement_status === 'document_submission' || patient.document_submission_date) && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Submission Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                      disabled={patient.settlement_status !== 'none' && patient.settlement_status !== 'document_submission'}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                      {...register('document_submission_date')}
+                    />
+                  </div>
+                )}
+
+                {/* PMJAY Pending Date */}
+                {(watchSettlementStatus === 'pending' || patient.settlement_status === 'pending' || patient.pending_date) && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Pending Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                      disabled={patient.settlement_status !== 'document_submission' && patient.settlement_status !== 'pending'}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                      {...register('pending_date')}
+                    />
+                  </div>
+                )}
+
+                {/* PMJAY Settlement Date */}
+                {(watchSettlementStatus === 'completed' || patient.settlement_status === 'completed' || patient.settlement_date) && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                      disabled={patient.settlement_status !== 'pending' && patient.settlement_status !== 'completed'}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                      {...register('settlement_date')}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Upload Discharge Summary (Optional)</label>
+                  <CameraFileUploader file={docFile} onChange={setDocFile} disabled={isLoading || isUploading} />
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Global Validation Errors */}
+        {Object.keys(errors).length > 0 && (
+          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-start gap-2.5 shadow-sm animate-pulse">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-semibold block">Please correct the following errors:</span>
+              <ul className="list-disc pl-4 space-y-0.5 font-medium font-sans">
+                {Object.entries(errors).map(([key, err]) => (
+                  <li key={key}>{err.message || `${key} has an error`}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
       </form>
     </Modal>
@@ -523,23 +658,28 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
     ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
     : doc.file_name;
 
+  const isCompressing = doc.mime_type === 'application/pdf' &&
+    doc.file_size >= 2 * 1024 * 1024 &&
+    !doc.is_compressed &&
+    (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000;
+
   const handleDownload = async (e) => {
     e.stopPropagation();
-    if (!fileUrl) return;
-    try {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
-      const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Download failed');
+    if (isCompressing) {
+      toast('PDF is currently being optimized. Please wait a moment.', { icon: '⏳' });
+      return;
     }
+
+    const downloadUrl = doc.download_url || fileUrl;
+    if (!downloadUrl) return;
+
+    // Use the backend-provided download URL which includes Content-Disposition
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleSelect = (e) => {
@@ -585,18 +725,27 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
             />
           </div>
         </div>
-        {/* Hover Actions */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-          <button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 bg-white rounded-full shadow-md hover:bg-blue-50 transition-colors">
+        {/* Actions (Always visible on mobile, hover on desktop) */}
+        <div className="absolute inset-0 bg-black/10 sm:bg-black/0 sm:group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+          <button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-blue-50 transition-colors">
             <Eye size={14} className="text-blue-600" />
           </button>
           {fileUrl && (
-            <button onClick={handleDownload} className="p-2 bg-white rounded-full shadow-md hover:bg-green-50 transition-colors">
-              <Download size={14} className="text-green-600" />
-            </button>
+            isCompressing ? (
+              <button 
+                onClick={(e) => { e.stopPropagation(); toast('PDF is currently being optimized. Please wait a moment.', { icon: '⏳' }); }}
+                className="p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-amber-50 transition-colors cursor-wait"
+              >
+                <Clock size={14} className="text-amber-500 animate-pulse" />
+              </button>
+            ) : (
+              <button onClick={handleDownload} className="p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-green-50 transition-colors">
+                <Download size={14} className="text-green-600" />
+              </button>
+            )
           )}
           {canDelete && (
-            <button onClick={(e) => { e.stopPropagation(); onDelete(doc); }} className="p-2 bg-white rounded-full shadow-md hover:bg-red-50 transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); onDelete(doc); }} className="p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-red-50 transition-colors">
               <Trash2 size={14} className="text-red-500" />
             </button>
           )}
@@ -617,16 +766,23 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
             Edited by {doc.updated_by_name}
           </p>
         )}
-        {doc.notes && <p className="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-md px-2 py-1 truncate">{doc.notes}</p>}
+        {doc.notes && <p className="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-md px-2 py-1 break-words whitespace-pre-wrap">{doc.notes}</p>}
         {/* Per-document download button */}
         {fileUrl && (
-          <button
-            onClick={handleDownload}
-            className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-100"
-          >
-            <Download size={12} />
-            Download
-          </button>
+          isCompressing ? (
+            <div className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-lg border border-amber-100 animate-pulse cursor-wait">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+              Optimizing size...
+            </div>
+          ) : (
+            <button
+              onClick={handleDownload}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-100"
+            >
+              <Download size={12} />
+              Download
+            </button>
+          )
         )}
       </div>
     </div>
@@ -637,7 +793,7 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
 export default function PatientDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canEdit } = useAuth();
+  const { user, canEdit } = useAuth();
   const queryClient = useQueryClient();
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -666,8 +822,26 @@ export default function PatientDetailPage() {
       page: docPage,
       limit: 12,
     }),
-    { enabled: !!id }
+    { 
+      enabled: !!id,
+      refetchInterval: (data) => {
+        const hasCompressing = data?.data?.some(doc => 
+          doc.mime_type === 'application/pdf' && 
+          doc.file_size >= 2 * 1024 * 1024 && 
+          !doc.is_compressed && 
+          (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000
+        );
+        return hasCompressing ? 4000 : false;
+      }
+    }
   );
+
+  const hasCompressingDocs = docsData?.data?.some(doc => 
+    doc.mime_type === 'application/pdf' && 
+    doc.file_size >= 2 * 1024 * 1024 && 
+    !doc.is_compressed && 
+    (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000
+  ) || false;
 
   const { mutate: deleteDocument, isLoading: deleting } = useMutation(
     (docId) => documentApi.delete(docId),
@@ -756,17 +930,7 @@ export default function PatientDetailPage() {
       if (selectedDocObjs.length === 1) {
         // Single file download
         const doc = selectedDocObjs[0];
-        const fileUrl = doc.presigned_url
-          ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
-          : null;
-
-        if (!fileUrl) {
-          toast.error('File not available');
-          return;
-        }
-
-        const response = await fetch(fileUrl);
-        const blob = await response.blob();
+        const blob = await documentApi.downloadRaw(doc.id);
         const isImage = doc.mime_type?.startsWith('image/');
         const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
         const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
@@ -785,13 +949,8 @@ export default function PatientDetailPage() {
         const zip = new JSZip();
 
         for (const doc of selectedDocObjs) {
-          const fileUrl = doc.presigned_url
-            ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
-            : null;
-
-          if (fileUrl) {
-            const response = await fetch(fileUrl);
-            const blob = await response.blob();
+          try {
+            const blob = await documentApi.downloadRaw(doc.id);
             const isImage = doc.mime_type?.startsWith('image/');
             const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
             const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
@@ -799,6 +958,8 @@ export default function PatientDetailPage() {
               : doc.file_name;
             const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
             zip.file(name, blob);
+          } catch (e) {
+            console.error(`Failed to download document ${doc.id} for zipping:`, e);
           }
         }
 
@@ -864,9 +1025,11 @@ export default function PatientDetailPage() {
               <Trash2 size={13} /> Delete ({selectedDocs.size})
             </Button>
           )}
-          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
-            <Edit2 size={13} /> Edit
-          </Button>
+          {!['pcc', 'nursing'].includes(user?.role) && (
+            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
+              <Edit2 size={13} /> Edit
+            </Button>
+          )}
           {patient.hospital_status === 'discharged' && (
             <Button 
               variant="success" 
@@ -886,9 +1049,11 @@ export default function PatientDetailPage() {
           )}
         </div>
         <div className="sm:hidden flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
-            <Edit2 size={13} /> Edit
-          </Button>
+          {!['pcc', 'nursing'].includes(user?.role) && (
+            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
+              <Edit2 size={13} /> Edit
+            </Button>
+          )}
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)} className="flex-1">
               <Upload size={13} /> Upload
@@ -898,7 +1063,7 @@ export default function PatientDetailPage() {
       </div>
 
       <Card>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-5">
+        <div className="flex flex-wrap gap-4 sm:gap-6 lg:gap-8">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
               <Calendar size={14} className="text-green-600" />
@@ -912,7 +1077,19 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {patient.hospital_status === 'discharged' && patient.discharge_date && (
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <User size={14} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 font-medium">Created By</p>
+              <p className="text-sm font-semibold text-gray-800">
+                {patient.created_by_name || 'System'}
+              </p>
+            </div>
+          </div>
+
+          {patient.discharge_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <CheckCircle size={14} className="text-purple-600" />
@@ -927,7 +1104,22 @@ export default function PatientDetailPage() {
             </div>
           )}
 
-          {patient.settlement_status === 'pending' && patient.pending_date && (
+          {patient.document_submission_date && (
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <FileText size={14} className="text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 font-medium">Doc Submission</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {format(new Date(patient.document_submission_date), 'dd MMM yyyy')}
+                  <span className="text-xs font-normal text-gray-500 ml-1">at {format(new Date(patient.document_submission_date), 'hh:mm a')}</span>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {patient.pending_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Clock size={14} className="text-amber-600" />
@@ -942,7 +1134,7 @@ export default function PatientDetailPage() {
             </div>
           )}
 
-          {patient.settlement_status === 'completed' && patient.settlement_date && (
+          {patient.settlement_date && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
                 <CheckCircle size={14} className="text-green-600" />
@@ -975,17 +1167,19 @@ export default function PatientDetailPage() {
               {patient.hospital_status === 'active' ? '🟢' : '🔵'} {patient.hospital_status}
             </Badge>
           </div>
-          {patient.hospital_status === 'discharged' && (
+          {patient.hospital_status === 'discharged' && patient.settlement_status && patient.settlement_status !== 'none' && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500 font-medium">Settlement:</span>
               <Badge variant={STATUS_COLORS[patient.settlement_status]}>
-                {patient.settlement_status === 'completed' ? '💰' : '⏳'} {patient.settlement_status}
+                {patient.settlement_status === 'completed' ? '💰' : '⏳'} {patient.settlement_status === 'document_submission' ? 'doc submission' : patient.settlement_status}
               </Badge>
             </div>
           )}
-          <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="w-fit self-end sm:w-auto sm:self-auto">
-            <Trash2 size={13} /> <span className="sm:hidden">Delete Profile</span><span className="hidden sm:inline">Delete Patient Profile</span>
-          </Button>
+          {['admin', 'hod'].includes(user?.role) && (
+            <Button variant="danger" size="sm" onClick={() => setDeletePatientOpen(true)} className="w-fit self-end sm:w-auto sm:self-auto">
+              <Trash2 size={13} /> <span className="sm:hidden">Delete Profile</span><span className="hidden sm:inline">Delete Patient Profile</span>
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -1008,8 +1202,10 @@ export default function PatientDetailPage() {
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">IP: {h.ip_number}</span>
                   <div className="flex flex-col items-end gap-1">
                     <Badge variant={STATUS_COLORS[h.hospital_status]} size="xs">{h.hospital_status}</Badge>
-                    {h.hospital_status === 'discharged' && (
-                      <Badge variant={STATUS_COLORS[h.settlement_status]} size="xs">{h.settlement_status}</Badge>
+                    {h.hospital_status === 'discharged' && h.settlement_status && h.settlement_status !== 'none' && (
+                      <Badge variant={STATUS_COLORS[h.settlement_status]} size="xs">
+                        {h.settlement_status === 'document_submission' ? 'doc submission' : h.settlement_status}
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -1125,17 +1321,20 @@ export default function PatientDetailPage() {
       </div>
 
       {/* Document Viewer */}
-      {viewDoc && (
-        <DocumentViewerModal 
-          doc={{
-            ...viewDoc,
-            canAction: canEdit(viewDoc.uploaded_by, viewDoc.uploader_role),
-            onDelete: () => { setViewDoc(null); setDeleteDoc(viewDoc); },
-            onEdit: () => { setViewDoc(null); setActionDocId(viewDoc.id); }
-          }} 
-          onClose={() => setViewDoc(null)} 
-        />
-      )}
+      {(() => {
+        const activeViewDoc = viewDoc ? (docs.find(d => d.id === viewDoc.id) || viewDoc) : null;
+        return activeViewDoc && (
+          <DocumentViewerModal 
+            doc={{
+              ...activeViewDoc,
+              canAction: canEdit(activeViewDoc.uploaded_by, activeViewDoc.uploader_role),
+              onDelete: () => { setViewDoc(null); setDeleteDoc(activeViewDoc); },
+              onEdit: () => { setViewDoc(null); setActionDocId(activeViewDoc.id); }
+            }} 
+            onClose={() => setViewDoc(null)} 
+          />
+        );
+      })()}
 
       {actionDocId && (
         <DocumentActionModal 

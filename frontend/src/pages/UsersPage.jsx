@@ -209,6 +209,13 @@ export default function UsersPage() {
     onError: (err) => toast.error(err.message),
   });
 
+  const { mutate: syncGSheet, isLoading: isSyncing } = useMutation(userApi.syncGSheet, {
+    onSuccess: () => {
+      toast.success('Successfully synced all users to Google Sheet!');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const users = data?.data || [];
   const pagination = data?.pagination;
 
@@ -238,6 +245,11 @@ export default function UsersPage() {
           <p className="text-gray-400 text-sm mt-0.5">{pagination?.total ?? 0} registered users</p>
         </div>
         <div className="flex gap-2">
+          {currentUser?.role === 'admin' && (
+            <Button size="sm" variant="secondary" onClick={() => syncGSheet()} loading={isSyncing}>
+              Sync Google Sheet
+            </Button>
+          )}
           {currentUser?.role === 'admin' && (
             <Button size="sm" onClick={() => setAddUserOpen(true)}>
               <UserPlus size={14} /> Add User

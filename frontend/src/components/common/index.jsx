@@ -36,6 +36,7 @@ export function Badge({ children, variant = 'gray', size = 'sm' }) {
     red: 'bg-red-100 text-red-700',
     amber: 'bg-amber-100 text-amber-700',
     purple: 'bg-purple-100 text-purple-700',
+    indigo: 'bg-indigo-100 text-indigo-700',
   };
   const sizes = { xs: 'px-1.5 py-0.5 text-xs', sm: 'px-2 py-0.5 text-xs' };
 
@@ -148,6 +149,7 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 export function StatCard({ title, value, icon: Icon, color = 'blue', trend, className }) {
   const colors = {
     blue: { bg: 'bg-blue-50', icon: 'text-blue-600', border: 'border-blue-100' },
+    indigo: { bg: 'bg-indigo-50', icon: 'text-indigo-600', border: 'border-indigo-100' },
     green: { bg: 'bg-green-50', icon: 'text-green-600', border: 'border-green-100' },
     amber: { bg: 'bg-amber-50', icon: 'text-amber-600', border: 'border-amber-100' },
     red: { bg: 'bg-red-50', icon: 'text-red-600', border: 'border-red-100' },
@@ -187,33 +189,41 @@ export function StatCard({ title, value, icon: Icon, color = 'blue', trend, clas
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
+import { createPortal } from 'react-dom';
+
+export function Modal({ open, onClose, title, children, footer, maxWidth = 'max-w-lg' }) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className={clsx(
         'relative bg-white w-full rounded-2xl shadow-2xl animate-slide-up',
-        'max-h-[92vh] flex flex-col overflow-hidden',
+        'max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] flex flex-col overflow-hidden',
         maxWidth
       )}>
         {title && (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0 bg-white z-10">
             <h2 className="font-bold text-gray-800 text-base">{title}</h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
               <span className="text-lg leading-none">×</span>
             </button>
           </div>
         )}
-        {/* Default: padded scrollable area. Forms with sticky footers override this by managing their own layout. */}
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
           <div className="p-5 flex flex-col flex-1 min-h-0">
             {children}
           </div>
         </div>
+        {footer && (
+          <div className="flex-shrink-0 border-t border-gray-100 bg-white px-5 py-4 z-10 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 
 // ── Brand ─────────────────────────────────────────────────────────────────────

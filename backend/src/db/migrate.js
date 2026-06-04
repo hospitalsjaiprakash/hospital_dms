@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const db = require('./index');
 const logger = require('../utils/logger');
 
@@ -173,15 +173,15 @@ const migrations = [
 
       CREATE TRIGGER trg_users_updated_at
         BEFORE UPDATE ON users
-        FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+        FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 
       CREATE TRIGGER trg_patients_updated_at
         BEFORE UPDATE ON patients
-        FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+        FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 
       CREATE TRIGGER trg_documents_updated_at
         BEFORE UPDATE ON documents
-        FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+        FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 
       -- Enforce: settlement cannot be 'completed' if hospital_status is 'active'
       CREATE OR REPLACE FUNCTION check_settlement_logic()
@@ -196,7 +196,7 @@ const migrations = [
 
       CREATE TRIGGER trg_patient_settlement_check
         BEFORE INSERT OR UPDATE ON patients
-        FOR EACH ROW EXECUTE FUNCTION check_settlement_logic();
+        FOR EACH ROW EXECUTE PROCEDURE check_settlement_logic();
     `
   },
   {
@@ -258,6 +258,7 @@ const migrations = [
   },
   {
     name: '015_add_new_doc_categories',
+    noTransaction: true,
     sql: `
       ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'pre_op';
       ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'post_op';
@@ -323,6 +324,35 @@ const migrations = [
         
       CREATE INDEX IF NOT EXISTS idx_patients_pending_date ON patients(pending_date);
     `
+  },
+  {
+    name: '021_add_missing_doc_categories',
+    noTransaction: true,
+    sql: `
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'clinical_notes';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'justification';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'surgery_notes';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'ot_notes';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'implant_invoice';
+      ALTER TYPE doc_category ADD VALUE IF NOT EXISTS 'icu_master_chart';
+    `
+  },
+  {
+    name: '022_add_document_submission_to_settlement',
+    sql: `
+      ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_settlement_status_check;
+      ALTER TABLE patients ADD CONSTRAINT patients_settlement_status_check CHECK (settlement_status IN ('none', 'document_submission', 'pending', 'completed'));
+      
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS document_submission_date TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_patients_document_submission_date ON patients(document_submission_date);
+    `
+  },
+  {
+    name: '023_add_is_compressed_to_documents',
+    sql: `
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_compressed BOOLEAN DEFAULT false;
+      CREATE INDEX IF NOT EXISTS idx_documents_is_compressed ON documents(is_compressed) WHERE is_deleted = false;
+    `
   }
 ];
 
@@ -345,13 +375,24 @@ async function runMigrations() {
     );
 
     if (existing.rows.length === 0) {
-      await db.withTransaction(async (client) => {
-        await client.query(migration.sql);
-        await client.query(
+      if (migration.noTransaction) {
+        const statements = migration.sql.split(';').filter(s => s.trim() !== '');
+        for (const stmt of statements) {
+          await db.query(stmt + ';');
+        }
+        await db.query(
           'INSERT INTO schema_migrations (name) VALUES ($1)',
           [migration.name]
         );
-      });
+      } else {
+        await db.withTransaction(async (client) => {
+          await client.query(migration.sql);
+          await client.query(
+            'INSERT INTO schema_migrations (name) VALUES ($1)',
+            [migration.name]
+          );
+        });
+      }
       logger.info(`Applied migration: ${migration.name}`);
     } else {
       logger.info(`Skipped migration (already applied): ${migration.name}`);
