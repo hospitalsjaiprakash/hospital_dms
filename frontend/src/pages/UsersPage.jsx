@@ -89,11 +89,21 @@ function AddUserModal({ open, onClose, currentUser }) {
 
 function UserDetailsModal({ user, open, onClose, currentUser, onDelete }) {
   const [page, setPage] = useState(1);
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery(
     ['user_audit_logs', user?.id, page],
     () => auditApi.getLogs({ user_id: user.id, page, limit: 10 }),
     { enabled: !!user?.id && open, keepPreviousData: true }
   );
+
+  const { mutate: unlockUser, isLoading: isUnlocking } = useMutation(userApi.unlock, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('users');
+      toast.success('User account unlocked successfully!');
+      onClose();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   if (!user) return null;
 
@@ -126,6 +136,36 @@ function UserDetailsModal({ user, open, onClose, currentUser, onDelete }) {
               ) : (
                 <p className="text-sm text-gray-400 mt-1 italic">Hidden (Not captured at signup)</p>
               )}
+            </div>
+          )}
+          {(user.login_attempts > 0 || (user.locked_until && new Date(user.locked_until) > new Date())) && (
+            <div className="col-span-2 bg-red-50 border border-red-100 rounded-lg p-3">
+              <div className="flex justify-between items-center gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs text-red-700 font-bold uppercase tracking-wider">Account Security</p>
+                  {user.locked_until && new Date(user.locked_until) > new Date() ? (
+                    <p className="text-xs text-red-600 mt-0.5 font-medium">
+                      Account is locked. Try again in{' '}
+                      {Math.ceil((new Date(user.locked_until) - new Date()) / 60000)} minute(s).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-orange-600 mt-0.5 font-medium">
+                      Suspicious activity: {user.login_attempts} failed login attempt(s).
+                    </p>
+                  )}
+                </div>
+                {['admin', 'hod'].includes(currentUser?.role) && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={isUnlocking}
+                    onClick={() => unlockUser(user.id)}
+                    className="!py-1.5 !px-3 text-xs flex-shrink-0"
+                  >
+                    Unlock Account
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -307,7 +347,7 @@ export default function UsersPage() {
               {users.map((u) => (
                 <div key={u.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedUser(u)}>
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                    <span className="text-blue-700 font-bold text-sm">{u.name.charAt(0)}</span>
+                    <span className="text-blue-700 font-bold text-sm">{u.name?.trim().charAt(0).toUpperCase() || '?'}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

@@ -64,11 +64,11 @@ export default function DocumentActionModal({ docId, open, onClose }) {
       let fileName;
       if (formData.doc_type === 'other' && customFileNameInput) {
         const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
-        fileName = `${sanitized}_${Date.now()}.${ext}`;
+        fileName = `${sanitized}.${ext}`;
       } else {
         fileName = file.file.name;
-        if (!fileName || fileName === 'blob' || fileName === 'image') {
-          fileName = `${formData.doc_type}_${Date.now()}.${ext}`;
+        if (!fileName || fileName === 'blob' || fileName === 'image' || fileName.startsWith('photo_')) {
+          fileName = `${formData.doc_type}.${ext}`;
         } else if (!fileName.includes('.')) {
           fileName = `${fileName}.${ext}`;
         }
@@ -128,10 +128,8 @@ export default function DocumentActionModal({ docId, open, onClose }) {
       toast.error('File not available');
       return;
     }
-    
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -250,6 +248,9 @@ export default function DocumentActionModal({ docId, open, onClose }) {
                           errors.custom_file_name ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
                         )}
                         {...register('custom_file_name')}
+                        onInput={(e) => {
+                          e.target.value = e.target.value.replace(/[!@#$%^&*()_+.\/,><?";:]/g, '');
+                        }}
                       />
                     </div>
                   )}

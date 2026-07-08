@@ -5,7 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
-const TARGET_PDF_SIZE = 2 * 1024 * 1024; // 2MB
+const TARGET_PDF_SIZE = 1 * 1024 * 1024; // 1MB
 const COMPRESSION_TIMEOUT_MS = 120_000; // 120 seconds max per compression attempt
 
 /**

@@ -79,7 +79,7 @@ const getPatients = async (req, res) => {
       statusParams.push(admission_date_from);
     }
     if (admission_date_to) {
-      statusConditions.push(`sub.admission_date <= $${idx++}`);
+      statusConditions.push(`sub.admission_date < $${idx++}::date + INTERVAL '1 day'`);
       statusParams.push(admission_date_to);
     }
 
@@ -134,7 +134,7 @@ const getPatients = async (req, res) => {
       params.push(admission_date_from);
     }
     if (admission_date_to) {
-      conditions.push(`p.admission_date <= $${idx++}`);
+      conditions.push(`p.admission_date < $${idx++}::date + INTERVAL '1 day'`);
       params.push(admission_date_to);
     }
 
@@ -170,7 +170,7 @@ const getPatient = async (req, res) => {
     `SELECT p.*,
       cu.name as created_by_name,
       uu.name as updated_by_name,
-      (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id)::int AS document_count
+      (SELECT COUNT(*) FROM documents d WHERE d.patient_id = p.id AND d.is_deleted = false)::int AS document_count
      FROM patients p
      LEFT JOIN users cu ON cu.id = p.created_by
      LEFT JOIN users uu ON uu.id = p.updated_by
@@ -461,7 +461,7 @@ const getUploadHistory = async (req, res) => {
 };
 
 const exportPatientsExcel = async (req, res) => {
-  const { search, hospital_status, settlement_status } = req.query;
+  const { search, hospital_status, settlement_status, admission_date_from, admission_date_to } = req.query;
 
   // Aggregate for "All Patients" and "Active (Admitted)" tabs.
   // For "Discharged" and "PMJAY" tabs, show all stays so they align with the on-screen table.
@@ -492,6 +492,15 @@ const exportPatientsExcel = async (req, res) => {
     if (settlement_status) {
       statusConditions.push(`sub.settlement_status = $${idx++}`);
       statusParams.push(settlement_status);
+    }
+
+    if (admission_date_from) {
+      statusConditions.push(`sub.admission_date >= $${idx++}`);
+      statusParams.push(admission_date_from);
+    }
+    if (admission_date_to) {
+      statusConditions.push(`sub.admission_date < $${idx++}::date + INTERVAL '1 day'`);
+      statusParams.push(admission_date_to);
     }
 
     const statusWhere = statusConditions.length ? `WHERE ${statusConditions.join(' AND ')}` : '';
@@ -530,6 +539,15 @@ const exportPatientsExcel = async (req, res) => {
     if (settlement_status) {
       conditions.push(`p.settlement_status = $${idx++}`);
       params.push(settlement_status);
+    }
+
+    if (admission_date_from) {
+      conditions.push(`p.admission_date >= $${idx++}`);
+      params.push(admission_date_from);
+    }
+    if (admission_date_to) {
+      conditions.push(`p.admission_date < $${idx++}::date + INTERVAL '1 day'`);
+      params.push(admission_date_to);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -659,7 +677,7 @@ const getDashboardData = async (req, res) => {
   `);
 
   const docStatsQuery = db.query(`
-    SELECT COUNT(*) as total_documents, COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as uploaded_today
+    SELECT COUNT(*) as total_documents, COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as uploaded_today, SUM(file_size) as total_storage_bytes
     FROM documents WHERE is_deleted = false
   `);
 

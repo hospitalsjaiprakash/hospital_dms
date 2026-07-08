@@ -34,7 +34,7 @@ export default function Layout() {
     navigate('/login');
   };
 
-  const visibleNavItems = navItems.filter((item) => item.roles.includes(user?.role));
+  const visibleNavItems = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -82,7 +82,7 @@ export default function Layout() {
       <div className="px-3 py-4 border-t border-blue-700">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-blue-700">
           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0">
-            <span className="text-blue-700 font-bold text-xs">{user?.name?.charAt(0).toUpperCase()}</span>
+            <span className="text-blue-700 font-bold text-xs">{user?.name?.trim().charAt(0).toUpperCase() || '?'}</span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-white text-xs font-semibold truncate">{user?.name}</p>

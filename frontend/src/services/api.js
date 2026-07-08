@@ -112,6 +112,7 @@ export const userApi = {
   getAll: (params) => api.get('/users', { params }),
   create: (data) => api.post('/users', data),
   toggleStatus: (id) => api.post(`/users/${id}/status`),
+  unlock: (id) => api.post(`/users/${id}/unlock`),
   delete: (id) => api.post(`/users/${id}/delete`),
   syncGSheet: () => api.post('/users/sync-gsheet'),
 };

@@ -5,6 +5,8 @@ import { useMutation, useQueryClient } from 'react-query';
 import ReactSelect from 'react-select';
 import clsx from 'clsx';
 import { patientApi, documentApi } from '../services/api';
+import * as offlineQueue from '../services/offlineQueue';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
 import { Button, Input, Card, Badge, Modal } from '../components/common';
 import CameraFileUploader from '../components/documents/CameraFileUploader';
@@ -20,6 +22,7 @@ export default function NewPatientPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { refreshCount } = useOfflineSync();
   const { register, handleSubmit, control, formState: { errors, isSubmitting }, setValue, watch } = useForm();
   const docType = watch('doc_type');
 
@@ -160,6 +163,7 @@ export default function NewPatientPage() {
       if (docFiles.length > 0) {
         setIsUploading(true);
         setUploadProgress({ done: 0, total: docFiles.length, percent: 0, isCompressing: false });
+        let queuedCount = 0;
         for (let i = 0; i < docFiles.length; i++) {
           const f = docFiles[i];
           const formData = new FormData();
@@ -177,26 +181,61 @@ export default function NewPatientPage() {
             fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${ext}`;
           }
 
-          formData.append('file', f.file, fileName);
-          formData.append('patient_id', patientId);
-          formData.append('doc_type', data.doc_type);
-          if (data.doc_notes) {
-            formData.append('notes', data.doc_notes);
+          // Detect offline before attempting
+          const isOffline = !navigator.onLine;
+          if (isOffline) {
+            // Queue directly without attempting a doomed request
+            await offlineQueue.enqueue({
+              patientId,
+              docType: data.doc_type,
+              fileName,
+              notes: data.doc_notes || null,
+              fileBlob: f.file,
+            });
+            queuedCount++;
+            setUploadProgress(prev => ({ ...prev, done: i + 1, percent: 0, isCompressing: false }));
+            continue;
           }
-          await documentApi.upload(formData, (progressEvent) => {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(prev => ({
-              ...prev,
-              percent,
-              isCompressing: percent >= 100,
-            }));
-          });
+
+          try {
+            formData.append('file', f.file, fileName);
+            formData.append('patient_id', patientId);
+            formData.append('doc_type', data.doc_type);
+            if (data.doc_notes) formData.append('notes', data.doc_notes);
+            await documentApi.upload(formData, (progressEvent) => {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(prev => ({
+                ...prev,
+                percent,
+                isCompressing: percent >= 100,
+              }));
+            });
+          } catch (uploadErr) {
+            // Network failure mid-upload — queue for later
+            await offlineQueue.enqueue({
+              patientId,
+              docType: data.doc_type,
+              fileName,
+              notes: data.doc_notes || null,
+              fileBlob: f.file,
+            });
+            queuedCount++;
+          }
           setUploadProgress(prev => ({
             ...prev,
             done: i + 1,
             percent: 0,
             isCompressing: false,
           }));
+        }
+
+        if (queuedCount > 0) {
+          await refreshCount();
+          toast(`📥 ${queuedCount} file(s) queued — will upload automatically when online.`, {
+            icon: '📥',
+            duration: 6000,
+            style: { background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' },
+          });
         }
       }
 

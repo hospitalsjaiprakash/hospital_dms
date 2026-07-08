@@ -34,7 +34,7 @@ const compressDocumentAsync = async (documentId, originalBuffer, mimeType, s3Key
     let compressed = false;
 
     // Compress PDF in background
-    if (mimeType === 'application/pdf' && originalBuffer.length > 2 * 1024 * 1024) {
+    if (mimeType === 'application/pdf' && originalBuffer.length > 1 * 1024 * 1024) {
       try {
         const startTime = Date.now();
         console.log(`[ASYNC COMPRESS] Starting PDF compression for ${documentId}...`);
@@ -104,17 +104,31 @@ const compressDocumentAsync = async (documentId, originalBuffer, mimeType, s3Key
 };
 
 const getDownloadNameForDoc = (doc) => {
-  let baseName = doc.file_name || 'document';
-  if (baseName === 'blob' || baseName === 'image') {
-    baseName = `${doc.doc_type}_${new Date(doc.created_at).getTime()}`;
+  let baseName = '';
+  
+  // We need DOC_TYPE_LABELS but backend doesn't import them, we can just format the doc_type nicely.
+  // Replace underscores with spaces and capitalize words
+  const formatDocType = (type) => {
+    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  if (doc.doc_type === 'other' && doc.file_name && !doc.file_name.startsWith('blob') && !doc.file_name.startsWith('image') && !doc.file_name.startsWith('photo_')) {
+    baseName = doc.file_name.replace(/\.[^/.]+$/, "");
+  } else {
+    baseName = formatDocType(doc.doc_type);
   }
-  if (!baseName.includes('.')) {
-    if (doc.mime_type === 'application/pdf') baseName += '.pdf';
-    else if (doc.mime_type === 'image/jpeg') baseName += '.jpg';
-    else if (doc.mime_type === 'image/png') baseName += '.png';
-    else baseName += '.jpg';
-  }
-  return baseName;
+
+  // Handle uhid fallback
+  const uhid = doc.patient_uhid || '';
+  
+  let downloadName = `${baseName} ${uhid}`.trim().replace(/[!@#$%^&*()_+.\/,><?";:]/g, '');
+
+  if (doc.mime_type === 'application/pdf') downloadName += '.pdf';
+  else if (doc.mime_type === 'image/jpeg') downloadName += '.jpg';
+  else if (doc.mime_type === 'image/png') downloadName += '.png';
+  else downloadName += '.jpg';
+
+  return downloadName;
 };
 
 /**
@@ -187,9 +201,9 @@ const uploadDocument = async (req, res) => {
   });
 
   let finalFileName = req.file.originalname;
-  if (!finalFileName || finalFileName === 'blob' || finalFileName === 'image') {
+  if (!finalFileName || finalFileName === 'blob' || finalFileName === 'image' || finalFileName.startsWith('photo_')) {
     const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
-    finalFileName = `${doc_type}_${Date.now()}.${ext}`;
+    finalFileName = `${doc_type}.${ext}`;
   } else if (!finalFileName.includes('.')) {
     const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
     finalFileName = `${finalFileName}.${ext}`;
@@ -205,8 +219,8 @@ const uploadDocument = async (req, res) => {
   const document = result.rows[0];
   await auditLog(ACTIONS.DOCUMENT_UPLOAD, 'document')(req, document.id, null, { patient_id, doc_type, file_name: finalFileName });
 
-  // ASYNC: Trigger compression in background for PDFs >= 2MB (don't wait for it)
-  if (req.file.mimetype === 'application/pdf' && originalSize >= 2 * 1024 * 1024) {
+  // ASYNC: Trigger compression in background for PDFs >= 1MB (don't wait for it)
+  if (req.file.mimetype === 'application/pdf' && originalSize >= 1 * 1024 * 1024) {
     console.log(`[UPLOAD] Queuing async compression for document ${document.id} (${(originalSize / 1024 / 1024).toFixed(1)}MB, stored as ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
     setImmediate(() => {
       compressDocumentAsync(document.id, req.file.buffer, req.file.mimetype, s3Key, patient, doc_type)
@@ -237,10 +251,12 @@ const getPatientDocuments = async (req, res) => {
     db.query(`SELECT COUNT(*) FROM documents d ${where}`, params),
     db.query(
       `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role,
-               up_u.name as updated_by_name, up_u.role as updated_by_role
+               up_u.name as updated_by_name, up_u.role as updated_by_role,
+               p.uhid as patient_uhid
        FROM documents d
        JOIN users u ON u.id = d.uploaded_by
        LEFT JOIN users up_u ON up_u.id = d.updated_by
+       LEFT JOIN patients p ON p.id = d.patient_id
        ${where}
        ORDER BY d.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -268,10 +284,12 @@ const getDocument = async (req, res) => {
 
   const docRes = await db.query(
     `SELECT d.*, u.name as uploaded_by_name, u.role as uploader_role,
-            up_u.name as updated_by_name, up_u.role as updated_by_role
+            up_u.name as updated_by_name, up_u.role as updated_by_role,
+            p.uhid as patient_uhid
      FROM documents d
      JOIN users u ON u.id = d.uploaded_by
      LEFT JOIN users up_u ON up_u.id = d.updated_by
+     LEFT JOIN patients p ON p.id = d.patient_id
      WHERE d.id = $1`,
     [id]
   );
@@ -355,9 +373,9 @@ const updateDocument = async (req, res) => {
 
     newUrl = url;
     newFileName = req.file.originalname;
-    if (!newFileName || newFileName === 'blob' || newFileName === 'image') {
+    if (!newFileName || newFileName === 'blob' || newFileName === 'image' || newFileName.startsWith('photo_')) {
       const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
-      newFileName = `${finalDocType}_${Date.now()}.${ext}`;
+      newFileName = `${finalDocType}.${ext}`;
     } else if (!newFileName.includes('.')) {
       const ext = req.file.mimetype === 'application/pdf' ? 'pdf' : (req.file.mimetype === 'image/webp' ? 'webp' : 'jpg');
       newFileName = `${newFileName}.${ext}`;
@@ -369,8 +387,8 @@ const updateDocument = async (req, res) => {
     // Delete old file asynchronously
     deleteFromS3(doc.s3_key).catch(err => console.error('Failed to delete old file from S3:', err));
 
-    // Trigger async compression for PDFs >= 2MB
-    if (req.file.mimetype === 'application/pdf' && originalSize >= 2 * 1024 * 1024) {
+    // Trigger async compression for PDFs >= 1MB
+    if (req.file.mimetype === 'application/pdf' && originalSize >= 1 * 1024 * 1024) {
       console.log(`Queuing async compression for document ${id} (${(originalSize / 1024 / 1024).toFixed(1)}MB)`);
       const patientRes = await db.query('SELECT id, uhid, name FROM patients WHERE id = $1', [doc.patient_id]);
       const patient = patientRes.rows[0];
@@ -460,8 +478,9 @@ const exportPatientDocuments = async (req, res) => {
     const presignedUrl = await getPresignedUrl(doc.s3_key);
     
     let baseName = doc.file_name || 'document';
-    if (baseName === 'blob' || baseName === 'image') {
-      baseName = `${doc.doc_type}_${new Date(doc.created_at).getTime()}`;
+    baseName = baseName.replace(/_\d{13}/g, '');
+    if (baseName === 'blob' || baseName === 'image' || baseName.startsWith('photo_')) {
+      baseName = doc.doc_type;
     }
     
     if (!baseName.includes('.')) {

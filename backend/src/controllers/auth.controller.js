@@ -6,10 +6,12 @@ const { createAuditLog, ACTIONS } = require('../services/audit.service');
 const logger = require('../utils/logger');
 
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MIN = 15;
+const LOCKOUT_DURATION_MIN = 5;
 
 const signup = async (req, res) => {
-  const { password, name, employee_id, role } = req.body;
+  let { password, name, employee_id, role } = req.body;
+  if (employee_id) employee_id = employee_id.trim();
+  if (name) name = name.trim();
 
   // Check if already registered
   const existingUser = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
@@ -41,7 +43,8 @@ const signup = async (req, res) => {
 };
 
 const login = async (req, res) => {
-  const { employee_id, password } = req.body;
+  let { employee_id, password } = req.body;
+  if (employee_id) employee_id = employee_id.trim();
 
   const userRes = await db.query(
     `SELECT id, name, email, role, employee_id, password_hash, is_active, last_login, login_attempts, locked_until
@@ -69,13 +72,20 @@ const login = async (req, res) => {
     return sendError(res, `Account locked. Try again in ${minutes} minute(s).`, 429);
   }
 
+  let currentAttempts = user.login_attempts;
+  
+  // If a previous lockout has expired, reset the attempt counter
+  if (user.locked_until && new Date(user.locked_until) <= new Date()) {
+    currentAttempts = 0;
+  }
+
   const isValid = await bcrypt.compare(password, user.password_hash);
 
   if (!isValid) {
-    const attempts = user.login_attempts + 1;
+    const attempts = currentAttempts + 1;
     const lockUpdate = attempts >= MAX_LOGIN_ATTEMPTS
       ? `locked_until = NOW() + INTERVAL '${LOCKOUT_DURATION_MIN} minutes',`
-      : '';
+      : 'locked_until = NULL,';
     await db.query(
       `UPDATE users SET login_attempts = $1, ${lockUpdate} updated_at = NOW() WHERE id = $2`,
       [attempts, user.id]
@@ -84,13 +94,14 @@ const login = async (req, res) => {
     return sendError(res, 'Invalid employee ID or password', 401);
   }
 
-  // Reset attempts on successful login
-  await db.query(
-    'UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1',
+  // Reset attempts on successful login and increment session version
+  const updateRes = await db.query(
+    'UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW(), session_version = session_version + 1 WHERE id = $1 RETURNING session_version',
     [user.id]
   );
 
-  const token = generateToken(user.id, user.role);
+  const sessionVersion = updateRes.rows[0].session_version;
+  const token = generateToken(user.id, user.role, sessionVersion);
 
   await createAuditLog({
     userId: user.id,

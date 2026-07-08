@@ -6,8 +6,17 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
 import { API_URL, DOC_TYPE_LABELS, DOC_TYPE_COLORS } from './constants';
+import { documentApi } from '../../services/api';
 
-export default function DocumentViewerModal({ doc, onClose }) {
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 KB';
+  const k = 1000;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+export default function DocumentViewerModal({ doc, open, onClose }) {
   React.useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = 'unset'; };
@@ -40,15 +49,14 @@ export default function DocumentViewerModal({ doc, onClose }) {
     
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
-  const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
+  const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name || doc.file_name.startsWith('photo_')
     ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
-    : doc.file_name;
+    : doc.file_name.replace(/_\d{13}/g, '');
 
   const canAction = doc.canAction;
   const onDelete = doc.onDelete;
@@ -62,7 +70,10 @@ export default function DocumentViewerModal({ doc, onClose }) {
           <span className={clsx('text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap', DOC_TYPE_COLORS[doc.doc_type])}>
             {DOC_TYPE_LABELS[doc.doc_type]}
           </span>
-          <p className="text-xs sm:text-sm font-medium text-white truncate">{displayName}</p>
+          <div className="flex flex-col">
+            <p className="text-xs sm:text-sm font-medium text-white truncate">{displayName}</p>
+            <p className="text-[10px] text-gray-400">{formatBytes(doc.file_size)}</p>
+          </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
           {canAction && (

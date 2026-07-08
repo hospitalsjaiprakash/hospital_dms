@@ -39,13 +39,20 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [stagedPhoto, setStagedPhoto] = useState(null);
   const [gpsData, setGpsData] = useState(null);
-  const [address, setAddress] = useState(null);
+  // Pre-load cached address from localStorage so GPS tag is immediate even offline
+  const [address, setAddress] = useState(() => {
+    try { return localStorage.getItem('gps_last_address') || null; } catch { return null; }
+  });
+  const [addressCached, setAddressCached] = useState(() => {
+    try { return !!localStorage.getItem('gps_last_address'); } catch { return false; }
+  });
   const [fetchingGps, setFetchingGps] = useState(false);
   const [liveTime, setLiveTime] = useState(new Date());
   const [watchId, setWatchId] = useState(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false); // false, true, or { index, pages, name }
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [mapError, setMapError] = useState(false); // true when static map fails to load
 
   // True when viewport is mobile/tablet (< 1024px = below lg breakpoint)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024);
@@ -74,7 +81,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     if (!videoEl) return;
     if (streamRef.current) {
       videoEl.srcObject = streamRef.current;
-      videoEl.play().catch(() => {});
+      videoEl.play().catch(() => { });
     }
   }, []);
 
@@ -103,7 +110,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         },
         audio: false,
       };
-      
+
       let mediaStream;
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -115,7 +122,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           throw err;
         }
       }
-      
+
       streamRef.current = mediaStream;
       setMode('camera');
 
@@ -135,19 +142,47 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const id = navigator.geolocation.watchPosition(
         async (pos) => {
           setGpsData(pos.coords);
-          // Only fetch address if significantly moved or first time
-          if (!address) {
+          // Always cache the latest coordinates (works offline)
+          try {
+            localStorage.setItem('gps_last_coords', JSON.stringify({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            }));
+          } catch { }
+          // Only fetch address if not yet set or first time
+          if (!address || addressCached) {
+            if (!navigator.onLine) {
+              // Offline — keep using the cached address (already loaded from localStorage)
+              setAddressCached(true);
+              return;
+            }
             try {
-              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`
+              );
               const data = await res.json();
               setAddress(data.display_name);
-            } catch (e) { console.error("Geocoding error", e); }
+              setAddressCached(false);
+              // Cache fresh address
+              try { localStorage.setItem('gps_last_address', data.display_name); } catch { }
+            } catch (e) {
+              // Geocoding failed (offline or timeout) — use cached address
+              console.error('Geocoding error', e);
+              const cached = localStorage.getItem('gps_last_address');
+              if (cached && !address) {
+                setAddress(cached);
+                setAddressCached(true);
+              }
+            }
           }
         },
         () => setGpsData(null),
         { enableHighAccuracy: true }
       );
       setWatchId(id);
+
+      // Reset map error state when camera starts fresh
+      setMapError(false);
 
       // Start time ticker
       const timer = setInterval(() => setLiveTime(new Date()), 1000);
@@ -189,7 +224,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       // 1. Fetch Static Map (Optional but recommended for the look)
       let mapImg = null;
-      if (gpsData) {
+      if (gpsData && navigator.onLine) {
         try {
           const mapUrl = `https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=14&l=map&size=200,200`;
           mapImg = await new Promise((resolve) => {
@@ -204,22 +239,22 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       // 2. Draw sophisticated GPS Tag Overlay
       const scale = canvas.width / 1000;
-      const cardHeight = 240 * scale; 
+      const cardHeight = 240 * scale;
       const cardPadding = 20 * scale;
-      
+
       // Draw background card (semi-transparent dark)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
       ctx.fillRect(0, canvas.height - cardHeight, canvas.width, cardHeight);
 
       let textX = cardPadding;
-      
+
       // Draw Mini Map if available
       if (mapImg) {
         const mapSize = cardHeight - (cardPadding * 2);
         const mapY = canvas.height - cardHeight + cardPadding;
-        
+
         ctx.drawImage(mapImg, cardPadding, mapY, mapSize, mapSize);
-        
+
         // Map border
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2 * scale;
@@ -228,7 +263,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         // Map center crosshair dot
         ctx.fillStyle = '#3b82f6';
         ctx.beginPath();
-        ctx.arc(cardPadding + mapSize/2, mapY + mapSize/2, 6 * scale, 0, 2 * Math.PI);
+        ctx.arc(cardPadding + mapSize / 2, mapY + mapSize / 2, 6 * scale, 0, 2 * Math.PI);
         ctx.fill();
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2 * scale;
@@ -240,10 +275,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const now = liveTime;
       const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
       const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-      
+
       // Text drawing
       ctx.fillStyle = 'white';
-      
+
       // Line 0: Header Badge with Pin Icon
       ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
       ctx.fillStyle = '#60a5fa'; // blue-400
@@ -263,7 +298,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const addressWords = fullAddress.split(' ');
       let line = '';
       let currentY = canvas.height - cardHeight + cardPadding + (75 * scale);
-      
+
       for (let n = 0; n < addressWords.length; n++) {
         const testLine = line + addressWords[n] + ' ';
         const metrics = ctx.measureText(testLine);
@@ -285,12 +320,12 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const lonStr = gpsData ? gpsData.longitude.toFixed(6) : '--.------';
       const coordStr = `LAT: ${latStr}°  |  LONG: ${lonStr}°`;
       ctx.fillText(coordStr, textX, canvas.height - 45 * scale);
-      
+
       // Line 4: Hospital Name & Time
       ctx.fillStyle = 'white';
       ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
       ctx.fillText("JPHRC JAI PRAKASH HOSPITAL", textX, canvas.height - 20 * scale);
-      
+
       ctx.textAlign = 'right';
       ctx.font = `italic ${14 * scale}px Inter, sans-serif`;
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -334,9 +369,9 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         return null;
       }
     } else if (f.type === 'application/pdf') {
-      if (f.size > 200 * 1024 * 1024) { 
-        toast.error(`PDF is ${(f.size / 1024 / 1024).toFixed(2)}MB. Each PDF must be under 200MB.`); 
-        return null; 
+      if (f.size > 200 * 1024 * 1024) {
+        toast.error(`PDF is ${(f.size / 1024 / 1024).toFixed(2)}MB. Each PDF must be under 200MB.`);
+        return null;
       }
       return { file: f, preview: null, type: 'pdf' };
     } else {
@@ -345,9 +380,9 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     }
   };
 
-  const processAndSetFile = async (f) => {
+  const processAndSetFile = async (f, pages, fileName, editIndex) => {
     // Check if total count will exceed 10
-    if (!(isLegacySingle || single) && files.length >= 10) {
+    if (editIndex === undefined && !(isLegacySingle || single) && files.length >= 10) {
       toast.error('Maximum 10 files allowed from Gallery/Scanner');
       return;
     }
@@ -356,7 +391,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     try {
       const entry = await processFile(f);
       if (entry) {
-        if (isLegacySingle || single) {
+        if (pages) entry.scannerPages = pages;
+        if (fileName) entry.scannerFileName = fileName;
+
+        if (editIndex !== undefined) {
+          const newFiles = [...files];
+          newFiles[editIndex] = entry;
+          handleChange(newFiles);
+        } else if (isLegacySingle || single) {
           handleChange([entry]);
         } else {
           handleChange([...files, entry]);
@@ -364,6 +406,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       }
     } finally {
       setCompressing(false);
+      setScannerOpen(false);
     }
   };
 
@@ -415,7 +458,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden">
             <img src={stagedPhoto.preview} alt="Captured preview" className="w-full h-full object-contain" />
           </div>
-          <div 
+          <div
             className="bg-gray-900 border-t border-white/10 flex items-center justify-around px-4 flex-shrink-0"
             style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1.5rem', height: 'auto', minHeight: '7rem' }}
           >
@@ -459,7 +502,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             id="jphrc-cfu-video"
             ref={videoRefCallback}
             autoPlay playsInline muted
-            onLoadedMetadata={(e) => { setVideoReady(true); e.target.play().catch(() => {}); }}
+            onLoadedMetadata={(e) => { setVideoReady(true); e.target.play().catch(() => { }); }}
             className="w-full h-full object-cover"
           />
 
@@ -478,12 +521,23 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent pt-16 text-white flex gap-3 items-end">
               {/* Live Map Box */}
               <div className="w-[84px] h-[84px] bg-gray-900 rounded border border-white/40 flex-shrink-0 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.8)]">
-                {gpsData ? (
-                  <img 
+                {gpsData && !mapError ? (
+                  <img
                     src={`https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=15&l=map&size=100,100`}
                     className="w-full h-full object-cover opacity-90 contrast-125 saturate-50"
                     alt="map"
+                    onError={() => setMapError(true)}
                   />
+                ) : gpsData && mapError ? (
+                  // Offline map fallback — show a coordinate grid placeholder
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800 gap-0.5 p-1">
+                    <div className="grid grid-cols-3 gap-px w-full h-full opacity-30">
+                      {Array.from({ length: 9 }).map((_, i) => (
+                        <div key={i} className="bg-gray-500 rounded-sm" />
+                      ))}
+                    </div>
+                    <span className="absolute text-[7px] font-bold text-blue-300 tracking-wider">OFFLINE</span>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900/80">
                     <Scan className="w-5 h-5 text-blue-500 animate-pulse mb-1" />
@@ -502,16 +556,30 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
               <div className="flex-1 min-w-0 flex flex-col justify-end">
                 <div className="flex items-center gap-1.5 mb-1">
-                   <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded-sm font-black tracking-wider shadow-sm">GEO-TAG</span>
-                   <span className="text-[9px] font-black tracking-widest text-amber-400 uppercase drop-shadow-md">JPHRC Hospital</span>
+                  <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded-sm font-black tracking-wider shadow-sm">GEO-TAG</span>
+                  <span className="text-[9px] font-black tracking-widest text-amber-400 uppercase drop-shadow-md">JPHRC Hospital</span>
+                  {addressCached && (
+                    <span className="text-[7px] font-bold text-orange-300 bg-orange-900/40 px-1 rounded">CACHED</span>
+                  )}
+                  {!navigator.onLine && (
+                    <span className="text-[7px] font-bold text-red-300 bg-red-900/40 px-1 rounded">OFFLINE</span>
+                  )}
                 </div>
                 <div className="font-black text-[15px] truncate drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-white">
-                  {address ? address.split(',').slice(0, 2).join(', ') : 'Determining location...'} 🇮🇳
+                  {address
+                    ? address.split(',').slice(0, 2).join(', ') + (addressCached ? ' 🇮🇳' : ' 🇮🇳')
+                    : gpsData
+                      ? `${gpsData.latitude.toFixed(4)}°N, ${gpsData.longitude.toFixed(4)}°E`
+                      : 'Determining location...'}
                 </div>
                 <div className="text-[10px] text-white/80 line-clamp-1 leading-snug drop-shadow-md font-medium">
-                  {address ? address.split(',').slice(2).join(', ').trim() : 'Fetching address details...'}
+                  {address
+                    ? address.split(',').slice(2).join(', ').trim() + (addressCached ? ' (cached)' : '')
+                    : gpsData
+                      ? 'GPS signal acquired · Address unavailable offline'
+                      : 'Fetching address details...'}
                 </div>
-                
+
                 <div className="flex flex-col mt-1.5 bg-black/50 p-1.5 px-2 rounded border border-white/10 backdrop-blur-md w-fit">
                   <div className="flex gap-3 text-[10px] font-mono font-bold text-blue-300 tracking-tight">
                     <span>LAT {gpsData ? gpsData.latitude.toFixed(6) : '--.------'}°</span>
@@ -542,7 +610,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
           {/* Torch Button */}
           {hasTorch && (
-            <button 
+            <button
               type="button" onClick={toggleTorch}
               className="absolute right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
               style={{ top: 'calc(4rem + env(safe-area-inset-top, 0px))' }}
@@ -552,7 +620,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           )}
 
           {/* Close Button */}
-          <button 
+          <button
             type="button" onClick={stopCamera}
             className="absolute right-4 w-10 h-10 bg-black/40 backdrop-blur-md text-white rounded-full flex items-center justify-center border border-white/20"
             style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
@@ -562,12 +630,12 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
 
         {/* Shutter Controls */}
-        <div 
+        <div
           className="bg-black flex items-center justify-around px-8 border-t border-white/5"
           style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))', paddingTop: '1.5rem', height: 'auto', minHeight: '8rem' }}
         >
           {/* Done/Cancel Button */}
-          <button 
+          <button
             type="button" onClick={stopCamera} disabled={capturing || compressing}
             className="text-white/70 text-sm font-semibold hover:text-white transition-colors"
           >
@@ -576,7 +644,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
           {/* Shutter Button */}
           <button
-            type="button" 
+            type="button"
             onClick={capturePhoto}
             disabled={capturing || compressing || !videoReady}
             className="group relative flex items-center justify-center"
@@ -606,7 +674,16 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   if ((isLegacySingle || single) && files.length > 0) {
     const f = files[0];
     return (
-      <div className="border-2 border-dashed border-green-200 bg-green-50 rounded-xl p-6 text-center">
+      <div
+        className="border-2 border-dashed border-green-200 bg-green-50 rounded-xl p-6 text-center cursor-pointer hover:bg-green-100 transition-colors"
+        onClick={() => {
+          if (f.scannerPages) {
+            setScannerOpen({ index: 0, pages: f.scannerPages, name: f.scannerFileName });
+          } else if (f.type === 'image') {
+            setPreviewPhoto(f);
+          }
+        }}
+      >
         <div className="space-y-2">
           {f.type === 'image' ? (
             <img src={f.preview} alt="Preview" className="w-24 h-24 object-cover rounded-lg mx-auto border border-green-200 shadow-sm" />
@@ -621,8 +698,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             <CheckCircle size={14} /><span className="text-xs">Ready to upload</span>
           </div>
           {!disabled && (
-            <button type="button" onClick={() => removeFile(0)}
-              className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mx-auto mt-2 bg-white px-2 py-1 rounded-md border border-red-100">
+            <button type="button" onClick={(e) => { e.stopPropagation(); removeFile(0); }}
+              className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mx-auto mt-2 bg-white px-2 py-1 rounded-md border border-red-100 relative z-10">
               <X size={12} /> Remove file
             </button>
           )}
@@ -648,7 +725,13 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           </div>
           <div className="flex flex-wrap gap-2">
             {files.map((f, i) => (
-              <div key={i} className="relative group cursor-pointer" onClick={() => setPreviewPhoto(f)}>
+              <div key={i} className="relative group cursor-pointer" onClick={() => {
+                if (f.scannerPages) {
+                  setScannerOpen({ index: i, pages: f.scannerPages, name: f.scannerFileName });
+                } else if (f.type === 'image') {
+                  setPreviewPhoto(f);
+                }
+              }}>
                 {f.type === 'image' ? (
                   <img src={f.preview} alt={`Photo ${i + 1}`}
                     className="w-16 h-16 object-cover rounded-xl border-2 border-white shadow-md group-hover:scale-105 transition-transform" />
@@ -706,13 +789,13 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         <div
           {...getRootProps()}
           onClick={(e) => {
-             if (!(isLegacySingle || single) && files.length >= 10) {
-               e.preventDefault();
-               e.stopPropagation();
-               toast.error('Maximum 10 files allowed from Gallery');
-               return;
-             }
-             open();
+            if (!(isLegacySingle || single) && files.length >= 10) {
+              e.preventDefault();
+              e.stopPropagation();
+              toast.error('Maximum 10 files allowed from Gallery');
+              return;
+            }
+            open();
           }}
           className={clsx(
             "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 border-dashed transition-all cursor-pointer",
@@ -728,27 +811,25 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <p className="text-[10px] font-bold text-gray-700">Gallery / PDF</p>
         </div>
 
-        {/* Option 3: Document Scanner - Mobile / Tablet only */}
-        {isMobile && (
-          <button
-            type="button"
-            onClick={() => setScannerOpen(true)}
-            disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)}
-            className={clsx(
-              "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
-              "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
-              (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed"
-            )}
-          >
-            <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-              <Scan className="w-5 h-5 text-purple-600" />
-              <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
-                SCAN
-              </div>
+        {/* Option 3: Document Scanner - Available on all devices */}
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)}
+          className={clsx(
+            "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
+            "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
+            (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed"
+          )}
+        >
+          <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <Scan className="w-5 h-5 text-purple-600" />
+            <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+              SCAN
             </div>
-            <p className="text-[10px] font-bold text-gray-800">Scanner</p>
-          </button>
-        )}
+          </div>
+          <p className="text-[10px] font-bold text-gray-800">Scanner</p>
+        </button>
       </div>
 
       {isMobile && (
@@ -758,10 +839,6 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           </p>
         </div>
       )}
-
-
-
-
 
       {/* Full-screen preview */}
       {previewPhoto && (
@@ -775,11 +852,13 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
         </div>
       )}
 
-      {/* Document Scanner Component — only available on mobile/tablet */}
-      {scannerOpen && isMobile && (
-        <DocumentScanner 
-          onClose={() => setScannerOpen(false)} 
-          onComplete={(pdfFile) => processAndSetFile(pdfFile)} 
+      {/* Document Scanner Component — available on all devices */}
+      {scannerOpen && (
+        <DocumentScanner
+          initialPages={scannerOpen.pages || []}
+          initialFileName={scannerOpen.name || ''}
+          onClose={() => setScannerOpen(false)}
+          onComplete={(pdfFile, pages, fileName) => processAndSetFile(pdfFile, pages, fileName, scannerOpen.index)}
         />
       )}
     </div>

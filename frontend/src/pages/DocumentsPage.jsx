@@ -17,11 +17,19 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import ReactSelect from 'react-select';
 
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 KB';
+  const k = 1000;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
 export default function DocumentsPage() {
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const isTodayOnly = queryParams.get('today') === 'true';
-
+  const { user, canEdit } = useAuth();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
@@ -45,27 +53,14 @@ export default function DocumentsPage() {
   const documents = data?.data || [];
   const pagination = data?.pagination;
 
-  const handleDownload = (doc) => {
+  const handleDownload = async (doc) => {
     if (!doc.presigned_url) {
       toast.error('File not available');
       return;
     }
     
-    let downloadName = doc.file_name || 'document';
-    if (downloadName === 'blob' || downloadName === 'image') {
-      downloadName = `${DOC_TYPE_LABELS[doc.doc_type] || 'document'}_${new Date(doc.created_at).getTime()}`;
-    }
-    
-    if (!downloadName.includes('.')) {
-      if (doc.mime_type === 'application/pdf') downloadName += '.pdf';
-      else if (doc.mime_type === 'image/jpeg') downloadName += '.jpg';
-      else if (doc.mime_type === 'image/png') downloadName += '.png';
-      else downloadName += '.jpg';
-    }
-
     const a = document.createElement('a');
-    a.href = doc.presigned_url;
-    a.download = downloadName;
+    a.href = doc.download_url || doc.presigned_url;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -196,7 +191,7 @@ export default function DocumentsPage() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-gray-700 truncate">{doc.uploaded_by_name}</p>
-                        <p className="text-[10px] text-gray-400 uppercase">{doc.uploader_role}</p>
+                        <p className="text-[10px] text-gray-400 uppercase">{doc.uploader_role} • {formatBytes(doc.file_size)}</p>
                       </div>
                     </div>
                     {doc.updated_by && (
@@ -252,7 +247,15 @@ export default function DocumentsPage() {
 
       {/* Modals */}
       {viewDoc && (
-        <DocumentViewerModal doc={viewDoc} onClose={() => setViewDoc(null)} />
+        <DocumentViewerModal 
+          doc={{
+            ...viewDoc,
+            canAction: canEdit(viewDoc.uploaded_by, viewDoc.uploader_role),
+            onDelete: () => { setViewDoc(null); setSelectedDocId(viewDoc.id); },
+            onEdit: () => { setViewDoc(null); setSelectedDocId(viewDoc.id); }
+          }} 
+          onClose={() => setViewDoc(null)} 
+        />
       )}
 
       {selectedDocId && (

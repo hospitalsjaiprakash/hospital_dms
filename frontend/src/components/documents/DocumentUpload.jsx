@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from 'react-query';
 import { useForm, Controller } from 'react-hook-form';
 import ReactSelect from 'react-select';
 import { documentApi } from '../../services/api';
+import * as offlineQueue from '../../services/offlineQueue';
+import { useOfflineSync } from '../../hooks/useOfflineSync';
 import { Button, Select, Modal } from '../common';
 import CameraFileUploader from './CameraFileUploader';
 import { DOC_TYPE_LABELS } from './constants';
@@ -14,6 +16,7 @@ const DOC_TYPES = Object.entries(DOC_TYPE_LABELS).map(([value, label]) => ({ val
 
 export default function DocumentUpload({ patientId, open, onClose }) {
   const queryClient = useQueryClient();
+  const { refreshCount } = useOfflineSync();
   const [files, setFiles] = useState([]);
   const [tempFile, setTempFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -48,34 +51,49 @@ export default function DocumentUpload({ patientId, open, onClose }) {
 
     setUploadProgress({ done: 0, total: files.length, currentPercent: 0, isCompressing: false });
     let successCount = 0;
+    let queuedCount = 0;
 
     for (let i = 0; i < files.length; i++) {
-      try {
-        const fileItem = files[i];
-        const formData = new FormData();
-        
-        const customFileNameInput = watch('custom_file_name')?.trim();
-        const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
-        
-        let fileName;
-        if (docType === 'other' && customFileNameInput) {
-          const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
-          fileName = files.length > 1
-            ? `${sanitized}_${i + 1}_${Date.now()}.${ext}`
-            : `${sanitized}_${Date.now()}.${ext}`;
-        } else {
-          fileName = fileItem.name;
-          if (!fileName || fileName === 'blob' || fileName === 'image') {
-            fileName = `${docType}_${i + 1}_${Date.now()}.${ext}`;
-          } else if (!fileName.includes('.')) {
-            fileName = `${fileName}.${ext}`;
-          }
+      const fileItem = files[i];
+      const customFileNameInput = watch('custom_file_name')?.trim();
+      const ext = fileItem.type === 'pdf' ? 'pdf' : 'jpg';
+      
+      let fileName;
+      if (docType === 'other' && customFileNameInput) {
+        const sanitized = customFileNameInput.replace(/[^a-zA-Z0-9_-]/g, '_');
+        fileName = files.length > 1
+          ? `${sanitized}_${i + 1}.${ext}`
+          : `${sanitized}.${ext}`;
+      } else {
+        fileName = fileItem.file.name;
+        if (!fileName || fileName === 'blob' || fileName === 'image' || fileName.startsWith('photo_')) {
+          fileName = files.length > 1 ? `${docType}_${i + 1}.${ext}` : `${docType}.${ext}`;
+        } else if (!fileName.includes('.')) {
+          fileName = `${fileName}.${ext}`;
         }
+      }
 
+      const effectiveNotes = notes?.trim() || '';
+
+      // Detect offline before attempting
+      if (!navigator.onLine) {
+        await offlineQueue.enqueue({
+          patientId,
+          docType,
+          fileName,
+          notes: effectiveNotes || null,
+          fileBlob: fileItem.file,
+        });
+        queuedCount++;
+        setUploadProgress(prev => ({ ...prev, done: i + 1, currentPercent: 0, isCompressing: false }));
+        continue;
+      }
+
+      try {
+        const formData = new FormData();
         formData.append('file', fileItem.file, fileName);
         formData.append('patient_id', patientId);
         formData.append('doc_type', docType);
-        const effectiveNotes = notes?.trim() || '';
         if (effectiveNotes) formData.append('notes', effectiveNotes);
         
         await documentApi.upload(formData, (progressEvent) => {
@@ -88,7 +106,20 @@ export default function DocumentUpload({ patientId, open, onClose }) {
         });
         successCount++;
       } catch (err) {
-        toast.error(`File ${i + 1} failed: ${err.message}`);
+        // Network failure — queue for later sync
+        const isNetworkError = !navigator.onLine || err?.code === 'ERR_NETWORK' || err?.message?.includes('Network Error');
+        if (isNetworkError) {
+          await offlineQueue.enqueue({
+            patientId,
+            docType,
+            fileName,
+            notes: effectiveNotes || null,
+            fileBlob: fileItem.file,
+          });
+          queuedCount++;
+        } else {
+          toast.error(`File ${i + 1} failed: ${err.message}`);
+        }
       }
       setUploadProgress(prev => ({ ...prev, done: i + 1, currentPercent: 0, isCompressing: false }));
     }
@@ -99,6 +130,14 @@ export default function DocumentUpload({ patientId, open, onClose }) {
       queryClient.invalidateQueries('stats');
       queryClient.invalidateQueries('audit-logs');
       toast.success(`${successCount} document(s) uploaded successfully!`);
+    }
+    if (queuedCount > 0) {
+      await refreshCount();
+      toast(`📥 ${queuedCount} file(s) queued — will upload automatically when online.`, {
+        icon: '📥',
+        duration: 6000,
+        style: { background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' },
+      });
     }
     handleClose();
   };
@@ -160,6 +199,9 @@ export default function DocumentUpload({ patientId, open, onClose }) {
                       errors.custom_file_name ? "border-red-400 focus:ring-red-500" : "border-gray-200 focus:ring-blue-500 hover:border-gray-300"
                     )}
                     {...register('custom_file_name')}
+                    onInput={(e) => {
+                      e.target.value = e.target.value.replace(/[!@#$%^&*()_+.\/,><?";:]/g, '');
+                    }}
                   />
                 </div>
               )}

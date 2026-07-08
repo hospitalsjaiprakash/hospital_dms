@@ -20,13 +20,12 @@ const sendToGSheet = async (action, payload) => {
         return status >= 200 && status < 400; // default
       }
     });
-    
+
     console.log(`Successfully sent ${action} to Google Sheet Webhook.`);
   } catch (err) {
     console.error('Error syncing to Google Sheet:', err.message);
   }
 };
-
 module.exports = {
   sendToGSheet
 };

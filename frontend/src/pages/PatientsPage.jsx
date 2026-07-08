@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { patientApi } from '../services/api';
 import { Card, Badge, Button, Input, Select, Spinner, EmptyState, Pagination, Modal } from '../components/common';
-import { Search, Plus, Users, ChevronRight, Download } from 'lucide-react';
+import { Search, Plus, Users, ChevronRight, Download, X, Calendar, Filter, SlidersHorizontal } from 'lucide-react';
 import { format } from 'date-fns';
 import { useDebounce } from '../hooks/useDebounce';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +43,18 @@ export default function PatientsPage() {
 
   const debouncedSearch = useDebounce(search, 300);
 
+  // ── Date filters ────────────────────────────────────────────────────────────
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const activeDateFilters = (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+
+  const clearDateFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+  };
+
   const getHospitalStatus = () => {
     if (activeTab === 'active') return 'active';
     if (activeTab === 'discharged' || activeTab === 'document_submission' || activeTab === 'pending' || activeTab === 'settled') return 'discharged';
@@ -57,11 +69,13 @@ export default function PatientsPage() {
   };
 
   const { data, isLoading, isFetching, refetch } = useQuery(
-    ['patients', debouncedSearch, activeTab, page],
+    ['patients', debouncedSearch, activeTab, page, dateFrom, dateTo],
     () => patientApi.getAll({
       search: debouncedSearch,
       hospital_status: getHospitalStatus(),
       settlement_status: getSettlementStatus(),
+      admission_date_from: dateFrom || undefined,
+      admission_date_to: dateTo || undefined,
       page,
       limit: 20,
     }),
@@ -74,7 +88,9 @@ export default function PatientsPage() {
       const params = {
         search: debouncedSearch,
         hospital_status: getHospitalStatus(),
-        settlement_status: getSettlementStatus()
+        settlement_status: getSettlementStatus(),
+        admission_date_from: dateFrom || undefined,
+        admission_date_to: dateTo || undefined,
       };
       const blob = await patientApi.exportExcel(params);
       const url = window.URL.createObjectURL(new Blob([blob]));
@@ -198,7 +214,7 @@ export default function PatientsPage() {
     { id: 'settled', label: 'PMJAY Settled' },
   ];
 
-  const hasFilters = search || activeTab !== 'all';
+  const hasFilters = search || activeTab !== 'all' || dateFrom || dateTo;
 
   // Grid column layout changes based on tab
   const headerCols = showSettlementCol
@@ -286,17 +302,127 @@ export default function PatientsPage() {
         ))}
       </div>
 
-      {/* Search */}
+      {/* Search + Date Filter */}
       <Card>
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by IP, UHID or name..."
-            className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300 transition-all"
-          />
+        {/* Search Row */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search by IP, UHID or name..."
+              className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none hover:border-gray-300 transition-all"
+            />
+          </div>
+
+          {/* Filter toggle button */}
+          <button
+            type="button"
+            onClick={() => setFilterOpen(o => !o)}
+            className={`relative flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all ${
+              filterOpen || activeDateFilters > 0
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            <SlidersHorizontal size={15} />
+            <span className="hidden sm:inline">Filters</span>
+            {activeDateFilters > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-blue-600 text-white text-[9px] font-black flex items-center justify-center shadow">
+                {activeDateFilters}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Date filter panel — collapsible */}
+        {filterOpen && (
+          <div className="mt-3 pt-3 border-t border-gray-100 animate-fade-in">
+            <div className="flex flex-wrap items-end gap-3">
+              {/* Label */}
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-full sm:w-auto">
+                <Calendar size={13} />
+                Admission Date Range
+              </div>
+
+              {/* From */}
+              <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">From</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:border-gray-300 transition-all bg-white"
+                />
+              </div>
+
+              {/* To */}
+              <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">To</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:border-gray-300 transition-all bg-white"
+                />
+              </div>
+
+              {/* Quick presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'Today', days: 0 },
+                  { label: 'Last 7d', days: 7 },
+                  { label: 'Last 30d', days: 30 },
+                  { label: 'Last 90d', days: 90 },
+                ].map(({ label, days }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const from = new Date();
+                      from.setDate(today.getDate() - days);
+                      const fmt = (d) => d.toISOString().split('T')[0];
+                      setDateFrom(fmt(from));
+                      setDateTo(fmt(today));
+                      setPage(1);
+                    }}
+                    className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-gray-200 bg-gray-50 text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Clear */}
+              {activeDateFilters > 0 && (
+                <button
+                  type="button"
+                  onClick={clearDateFilters}
+                  className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 rounded-lg transition-colors"
+                >
+                  <X size={12} />
+                  Clear dates
+                </button>
+              )}
+            </div>
+
+            {/* Active filter summary */}
+            {activeDateFilters > 0 && (
+              <div className="mt-2.5 flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <Calendar size={12} />
+                <span>
+                  Showing admissions
+                  {dateFrom && <> from <strong>{format(new Date(dateFrom), 'dd MMM yyyy')}</strong></>}
+                  {dateTo && <> to <strong>{format(new Date(dateTo), 'dd MMM yyyy')}</strong></>}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Patient List */}
@@ -312,9 +438,11 @@ export default function PatientsPage() {
           />
         ) : (
           <>
-            {/* Table Header - Desktop */}
-            <div
-              className="hidden sm:grid gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-t-xl"
+            <div className="overflow-x-auto w-full rounded-t-xl">
+              <div className="min-w-[1000px]">
+                {/* Table Header - Desktop */}
+                <div
+                  className="grid gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-t-xl"
               style={{ gridTemplateColumns: gridStyle }}
             >
               <div className={`${patientColSpan} flex items-center gap-2`}>
@@ -364,7 +492,7 @@ export default function PatientsPage() {
                 <Link
                   key={patient.id}
                   to={`/patients/${patient.id}`}
-                  className={`flex sm:grid gap-3 items-center px-5 py-4 transition-colors group border-l-2 ${
+                  className={`grid gap-3 items-center px-5 py-4 transition-colors group border-l-2 ${
                     selectedIds.includes(patient.id)
                       ? 'bg-green-50 border-l-green-400 hover:bg-green-100'
                       : 'border-l-transparent hover:bg-gray-50'
@@ -402,29 +530,29 @@ export default function PatientsPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">{patient.name}</p>
-                      <p className="text-xs text-gray-400 sm:hidden">{patient.uhid}</p>
+                      
                     </div>
                   </div>
 
                   {/* IP No */}
-                  <div className="hidden sm:flex sm:col-span-2 items-center pr-2">
+                  <div className="flex col-span-2 items-center pr-2">
                     <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 break-words max-w-full">{patient.ip_number || '-'}</span>
                   </div>
 
                   {/* UHID */}
-                  <div className={`hidden sm:flex ${uhidColSpan} items-center`}>
+                  <div className={`flex ${uhidColSpan} items-center`}>
                     <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-md">{patient.uhid}</span>
                   </div>
 
                   {/* Admitted Date — shown in ALL tabs */}
-                  <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                  <div className="flex col-span-2 flex-col justify-center">
                     <span className="text-xs font-semibold text-gray-700">{fmtDate(patient.admission_date)}</span>
                     <span className="text-[10px] text-gray-400 mt-0.5">{format(new Date(patient.created_at), 'hh:mm a')}</span>
                   </div>
 
                   {/* Discharge Date (shown in discharged / pending / settled tabs) */}
                   {showDischargeCol && (
-                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                    <div className="flex col-span-2 flex-col justify-center">
                       {patient.hospital_status === 'discharged' && patient.discharge_date ? (
                         <>
                           <span className="text-xs font-semibold text-purple-700">{fmtDate(patient.discharge_date)}</span>
@@ -438,7 +566,7 @@ export default function PatientsPage() {
 
                   {/* Document Submission Date */}
                   {showDocSubCol && (
-                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                    <div className="flex col-span-2 flex-col justify-center">
                       {patient.settlement_status !== 'none' && patient.document_submission_date ? (
                         <>
                           <span className="text-xs font-semibold text-indigo-700">{fmtDate(patient.document_submission_date)}</span>
@@ -452,7 +580,7 @@ export default function PatientsPage() {
 
                   {/* Pending Date (shown in pending / settled tabs) */}
                   {showPendingCol && (
-                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                    <div className="flex col-span-2 flex-col justify-center">
                       {(patient.settlement_status === 'pending' || patient.settlement_status === 'completed') && patient.pending_date ? (
                         <>
                           <span className="text-xs font-semibold text-amber-700">{fmtDate(patient.pending_date)}</span>
@@ -466,7 +594,7 @@ export default function PatientsPage() {
 
                   {/* Settlement Date (shown only in settled tab) */}
                   {showSettlementCol && (
-                    <div className="hidden sm:flex sm:col-span-2 flex-col justify-center">
+                    <div className="flex col-span-2 flex-col justify-center">
                       {patient.settlement_status === 'completed' && patient.settlement_date ? (
                         <>
                           <span className="text-xs font-semibold text-green-700">{fmtDate(patient.settlement_date)}</span>
@@ -479,7 +607,7 @@ export default function PatientsPage() {
                   )}
 
                   {/* Status */}
-                  <div className={`hidden sm:flex ${statusColSpan} flex-col gap-1 items-start`}>
+                  <div className={`flex ${statusColSpan} flex-col gap-1 items-start`}>
                     <Badge variant={STATUS_COLORS[patient.hospital_status]}>{patient.hospital_status}</Badge>
                     {patient.hospital_status === 'discharged' && patient.settlement_status && patient.settlement_status !== 'none' && (
                       <Badge variant={STATUS_COLORS[patient.settlement_status]} size="xs">
@@ -489,19 +617,19 @@ export default function PatientsPage() {
                   </div>
 
                   {/* Doc count */}
-                  <div className="hidden sm:flex sm:col-span-1 items-center">
+                  <div className="flex col-span-1 items-center">
                     <span className="text-xs text-gray-500 font-medium">{patient.document_count}</span>
                   </div>
 
                   {/* Arrow */}
-                  <div className="sm:col-span-1 flex justify-end">
-                    <div className="flex sm:hidden flex-col gap-1 mr-3">
-                      <Badge variant={STATUS_COLORS[patient.hospital_status]}>{patient.hospital_status}</Badge>
-                    </div>
+                  <div className="col-span-1 flex justify-end">
+                    
                     <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-400 transition-colors" />
                   </div>
                 </Link>
               ))}
+            </div>
+              </div>
             </div>
 
             {pagination && (

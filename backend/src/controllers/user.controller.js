@@ -40,7 +40,7 @@ const getUsers = async (req, res) => {
   const [countRes, usersRes] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM users ${where}`, params),
     db.query(
-      `SELECT id, name, role, employee_id, is_active, last_login, created_at, 
+      `SELECT id, name, role, employee_id, is_active, last_login, created_at, login_attempts, locked_until,
               ${req.user.role === 'admin' ? 'plain_password' : 'NULL as plain_password'}
        FROM users ${where}
        ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -56,7 +56,9 @@ const createUser = async (req, res) => {
     return sendError(res, 'Only administrators can create new users', 403);
   }
 
-  const { name, employee_id, role, password } = req.body;
+  let { name, employee_id, role, password } = req.body;
+  if (employee_id) employee_id = employee_id.trim();
+  if (name) name = name.trim();
 
   const existing = await db.query('SELECT id FROM users WHERE employee_id = $1', [employee_id]);
   if (existing.rows.length) return sendError(res, 'Employee ID already exists', 409);
@@ -92,7 +94,15 @@ const toggleUserStatus = async (req, res) => {
   }
 
   const newStatus = !userRes.rows[0].is_active;
-  await db.query('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, id]);
+  if (newStatus) {
+    // When activating, reset login attempts and clear lockout
+    await db.query(
+      'UPDATE users SET is_active = $1, login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $2',
+      [newStatus, id]
+    );
+  } else {
+    await db.query('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, id]);
+  }
 
   await auditLog(ACTIONS.USER_UPDATE, 'user')(req, id, { is_active: userRes.rows[0].is_active }, { is_active: newStatus });
 
@@ -147,4 +157,25 @@ const syncAllUsersToSheet = async (req, res) => {
   return sendSuccess(res, null, 'Sync triggered successfully');
 };
 
-module.exports = { getUsers, createUser, toggleUserStatus, deleteUser, syncAllUsersToSheet };
+const unlockUser = async (req, res) => {
+  const { id } = req.params;
+
+  const userRes = await db.query('SELECT * FROM users WHERE id = $1', [id]);
+  if (!userRes.rows.length) return sendError(res, 'User not found', 404);
+
+  // Security: HODs can only manage PCCs and Nursing
+  if (req.user.role === 'hod' && ['admin', 'hod'].includes(userRes.rows[0].role)) {
+    return sendError(res, 'HODs can only manage Nursing and PCC accounts', 403);
+  }
+
+  await db.query(
+    'UPDATE users SET login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1',
+    [id]
+  );
+
+  await auditLog(ACTIONS.USER_UPDATE, 'user')(req, id, { locked: true }, { locked: false });
+
+  return sendSuccess(res, null, 'User account unlocked successfully');
+};
+
+module.exports = { getUsers, createUser, toggleUserStatus, deleteUser, syncAllUsersToSheet, unlockUser };

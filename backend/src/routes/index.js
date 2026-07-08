@@ -76,6 +76,7 @@ router.get('/patients/:patient_id/documents/export', authenticate, documentCtrl.
 router.get('/users', authenticate, authorize('admin', 'hod'), userCtrl.getUsers);
 router.post('/users', authenticate, authorize('admin', 'hod'), validate(schemas.createUser), userCtrl.createUser);
 router.post('/users/:id/status', authenticate, authorize('admin', 'hod'), userCtrl.toggleUserStatus);
+router.post('/users/:id/unlock', authenticate, authorize('admin', 'hod'), userCtrl.unlockUser);
 router.post('/users/:id/delete', authenticate, authorize('admin'), userCtrl.deleteUser);
 router.post('/users/sync-gsheet', authenticate, authorize('admin'), userCtrl.syncAllUsersToSheet);
 

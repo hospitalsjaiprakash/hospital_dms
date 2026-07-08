@@ -28,7 +28,7 @@ const authenticate = async (req, res, next) => {
     }
 
     const userRes = await db.query(
-      'SELECT id, name, email, role, employee_id, is_active FROM users WHERE id = $1',
+      'SELECT id, name, email, role, employee_id, is_active, session_version FROM users WHERE id = $1',
       [decoded.userId]
     );
 
@@ -36,7 +36,14 @@ const authenticate = async (req, res, next) => {
       return sendError(res, 'Account not found or deactivated', 401);
     }
 
-    req.user = userRes.rows[0];
+    const user = userRes.rows[0];
+
+    // Prevent concurrent logins: check if the token's session version matches the current one in the DB
+    if (decoded.sessionVersion !== undefined && decoded.sessionVersion !== user.session_version) {
+      return sendError(res, 'Session expired due to login from another device. Please login again.', 401);
+    }
+
+    req.user = user;
     next();
   } catch (err) {
     logger.error('Auth middleware error', { error: err.message });
@@ -60,9 +67,9 @@ const authorize = (...allowedRoles) => {
 /**
  * Generate access token
  */
-const generateToken = (userId, role) => {
+const generateToken = (userId, role, sessionVersion) => {
   return jwt.sign(
-    { userId, role },
+    { userId, role, sessionVersion },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );

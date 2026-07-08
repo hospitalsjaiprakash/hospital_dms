@@ -14,6 +14,15 @@ import clsx from 'clsx';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
+import { Database } from 'lucide-react';
+
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1000;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 const STATUS_COLORS = {
   active: 'green', discharged: 'blue',
@@ -141,7 +150,7 @@ export default function DashboardPage() {
       {statsLoading ? (
         <div className="flex justify-center py-8"><Spinner /></div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-8 gap-3 sm:gap-4">
           <Link to="/patients" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Total Patients" value={stats?.total_patients} icon={Users} color="blue" className="h-full" />
           </Link>
@@ -163,9 +172,15 @@ export default function DashboardPage() {
           <Link to="/documents" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
             <StatCard title="Documents" value={stats?.total_documents} icon={FileText} color="blue" className="h-full" />
           </Link>
-          <Link to="/documents?today=true" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full col-span-2 sm:col-span-1">
-            <StatCard title="Today's Uploads" value={stats?.uploaded_today} icon={TrendingUp} color="green" trend="Today" className="h-full" />
-          </Link>
+          {user?.role === 'admin' ? (
+            <div className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
+              <StatCard title="Total Storage" value={formatBytes(stats?.total_storage_bytes)} icon={Database} color="indigo" className="h-full" />
+            </div>
+          ) : (
+            <Link to="/documents?today=true" className="block transition-transform hover:scale-[1.02] active:scale-[0.98] h-full">
+              <StatCard title="Today's Uploads" value={stats?.uploaded_today} icon={TrendingUp} color="green" trend="Today" className="h-full" />
+            </Link>
+          )}
         </div>
       )}
 
@@ -230,7 +245,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors group"
               >
                 <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-blue-700 font-bold text-xs">{patient.name.charAt(0)}</span>
+                  <span className="text-blue-700 font-bold text-xs">{patient.name?.trim().charAt(0).toUpperCase() || '?'}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">

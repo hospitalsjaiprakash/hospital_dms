@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { patientApi, documentApi } from '../services/api';
+import * as offlineQueue from '../services/offlineQueue';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
-import { Card, Badge, Button, Select, Spinner, EmptyState, Modal } from '../components/common';
+import { Card, Badge, Button, Select, Spinner, EmptyState, Modal, Pagination } from '../components/common';
 import DocumentUpload from '../components/documents/DocumentUpload';
 import DocumentActionModal from '../components/documents/DocumentActionModal';
 import DocumentViewerModal from '../components/documents/DocumentViewerModal';
@@ -35,11 +37,20 @@ const STATUS_COLORS = {
   none: 'gray'
 };
 
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 KB';
+  const k = 1000;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
 // ── Readmit Form (full-page, same as NewPatientPage readmit flow) ─────────────
 function ReadmitModal({ patient, open, onClose }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { refreshCount } = useOfflineSync();
   const [docFiles, setDocFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -80,27 +91,61 @@ function ReadmitModal({ patient, open, onClose }) {
       if (docFiles.length > 0) {
         setIsUploading(true);
         setUploadProgress({ done: 0, total: docFiles.length, percent: 0, isCompressing: false });
+        let queuedCount = 0;
         for (let i = 0; i < docFiles.length; i++) {
           const f = docFiles[i];
-          const formData = new FormData();
           const fileName = `${data.doc_type}_${i + 1}_${Date.now()}.${f.type === 'pdf' ? 'pdf' : 'jpg'}`;
-          formData.append('file', f.file, fileName);
-          formData.append('patient_id', newPatientId);
-          formData.append('doc_type', data.doc_type);
-          await documentApi.upload(formData, (progressEvent) => {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(prev => ({
-              ...prev,
-              percent,
-              isCompressing: percent >= 100,
-            }));
-          });
+
+          if (!navigator.onLine) {
+            await offlineQueue.enqueue({
+              patientId: newPatientId,
+              docType: data.doc_type,
+              fileName,
+              notes: null,
+              fileBlob: f.file,
+            });
+            queuedCount++;
+            setUploadProgress(prev => ({ ...prev, done: i + 1 }));
+            continue;
+          }
+
+          try {
+            const formData = new FormData();
+            formData.append('file', f.file, fileName);
+            formData.append('patient_id', newPatientId);
+            formData.append('doc_type', data.doc_type);
+            await documentApi.upload(formData, (progressEvent) => {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(prev => ({
+                ...prev,
+                percent,
+                isCompressing: percent >= 100,
+              }));
+            });
+          } catch (uploadErr) {
+            await offlineQueue.enqueue({
+              patientId: newPatientId,
+              docType: data.doc_type,
+              fileName,
+              notes: null,
+              fileBlob: f.file,
+            });
+            queuedCount++;
+          }
           setUploadProgress(prev => ({
             ...prev,
             done: i + 1,
             percent: 0,
             isCompressing: false,
           }));
+        }
+        if (queuedCount > 0) {
+          await refreshCount();
+          toast(`📥 ${queuedCount} file(s) queued — will upload when online.`, {
+            icon: '📥',
+            duration: 6000,
+            style: { background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' },
+          });
         }
       }
 
@@ -305,6 +350,7 @@ function ReadmitModal({ patient, open, onClose }) {
 function EditPatientModal({ patient, open, onClose }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { refreshCount } = useOfflineSync();
   const [docFile, setDocFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -363,18 +409,52 @@ function EditPatientModal({ patient, open, onClose }) {
       if (docFile && watchHospitalStatus === 'discharged' && !isRestricted) {
         setIsUploading(true);
         setUploadProgress({ done: 0, total: 1, percent: 0, isCompressing: false });
-        const formData = new FormData();
-        formData.append('file', docFile.file);
-        formData.append('patient_id', patient.id);
-        formData.append('doc_type', 'discharge_summary');
-        await documentApi.upload(formData, (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(prev => ({
-            ...prev,
-            percent,
-            isCompressing: percent >= 100,
-          }));
-        });
+        const fileName = `discharge_summary_${Date.now()}.${docFile.type === 'pdf' ? 'pdf' : 'jpg'}`;
+
+        if (!navigator.onLine) {
+          await offlineQueue.enqueue({
+            patientId: patient.id,
+            docType: 'discharge_summary',
+            fileName,
+            notes: null,
+            fileBlob: docFile.file,
+          });
+          await refreshCount();
+          toast(`📥 Discharge summary queued — will upload when online.`, {
+            icon: '📥',
+            duration: 6000,
+            style: { background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' },
+          });
+        } else {
+          try {
+            const formData = new FormData();
+            formData.append('file', docFile.file, fileName);
+            formData.append('patient_id', patient.id);
+            formData.append('doc_type', 'discharge_summary');
+            await documentApi.upload(formData, (progressEvent) => {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(prev => ({
+                ...prev,
+                percent,
+                isCompressing: percent >= 100,
+              }));
+            });
+          } catch (uploadErr) {
+            await offlineQueue.enqueue({
+              patientId: patient.id,
+              docType: 'discharge_summary',
+              fileName,
+              notes: null,
+              fileBlob: docFile.file,
+            });
+            await refreshCount();
+            toast(`📥 Discharge summary queued — will upload when online.`, {
+              icon: '📥',
+              duration: 6000,
+              style: { background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' },
+            });
+          }
+        }
       }
 
       queryClient.invalidateQueries(['patient', patient.id]);
@@ -451,19 +531,22 @@ function EditPatientModal({ patient, open, onClose }) {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Full Name *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+              disabled={isRestricted}
               {...register('name', { required: 'Name required' })} />
             {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
           </div>
           <div className="space-y-1">
             <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">IP Number *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+              disabled={isRestricted}
               {...register('ip_number', { required: 'IP required' })} />
             {errors.ip_number && <p className="text-xs text-red-500">{errors.ip_number.message}</p>}
           </div>
           <div className="space-y-1">
             <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">UHID *</label>
-            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+              disabled={isRestricted}
               {...register('uhid', { 
                 required: 'UHID required',
                 pattern: { value: /^[A-Z0-9]{11}$/, message: 'Invalid UHID (11 chars)' }
@@ -476,7 +559,8 @@ function EditPatientModal({ patient, open, onClose }) {
             <input 
               type="datetime-local" 
               max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+              disabled={isRestricted}
               {...register('admission_date', { 
                 required: 'Admission date required',
                 validate: (value) => {
@@ -506,14 +590,14 @@ function EditPatientModal({ patient, open, onClose }) {
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Notes</label>
           <textarea 
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 h-20 disabled:bg-gray-50 disabled:text-gray-500"
+            disabled={isRestricted}
             {...register('notes')}
             placeholder="Additional notes..."
           />
         </div>
 
-        {!isRestricted && (
-          <>
+        <>
             {/* Hospital Status */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
@@ -562,59 +646,63 @@ function EditPatientModal({ patient, open, onClose }) {
                   {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
                 </div>
 
-                {/* PMJAY Settlement Dropdown */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Status</label>
-                  <select 
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    {...register('settlement_status')}
-                  >
-                    {getSettlementOptions().map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {!isRestricted && (
+                  <>
+                    {/* PMJAY Settlement Dropdown */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Status</label>
+                      <select 
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        {...register('settlement_status')}
+                      >
+                        {getSettlementOptions().map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                {/* Document Submission Date */}
-                {(watchSettlementStatus === 'document_submission' || patient.settlement_status === 'document_submission' || patient.document_submission_date) && (
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Submission Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                      disabled={patient.settlement_status !== 'none' && patient.settlement_status !== 'document_submission'}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
-                      {...register('document_submission_date')}
-                    />
-                  </div>
-                )}
+                    {/* Document Submission Date */}
+                    {(watchSettlementStatus === 'document_submission' || patient.settlement_status === 'document_submission' || patient.document_submission_date) && (
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Document Submission Date & Time</label>
+                        <input
+                          type="datetime-local"
+                          max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          disabled={patient.settlement_status !== 'none' && patient.settlement_status !== 'document_submission'}
+                          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                          {...register('document_submission_date')}
+                        />
+                      </div>
+                    )}
 
-                {/* PMJAY Pending Date */}
-                {(watchSettlementStatus === 'pending' || patient.settlement_status === 'pending' || patient.pending_date) && (
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Pending Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                      disabled={patient.settlement_status !== 'document_submission' && patient.settlement_status !== 'pending'}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
-                      {...register('pending_date')}
-                    />
-                  </div>
-                )}
+                    {/* PMJAY Pending Date */}
+                    {(watchSettlementStatus === 'pending' || patient.settlement_status === 'pending' || patient.pending_date) && (
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Pending Date & Time</label>
+                        <input
+                          type="datetime-local"
+                          max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          disabled={patient.settlement_status !== 'document_submission' && patient.settlement_status !== 'pending'}
+                          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                          {...register('pending_date')}
+                        />
+                      </div>
+                    )}
 
-                {/* PMJAY Settlement Date */}
-                {(watchSettlementStatus === 'completed' || patient.settlement_status === 'completed' || patient.settlement_date) && (
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                      disabled={patient.settlement_status !== 'pending' && patient.settlement_status !== 'completed'}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
-                      {...register('settlement_date')}
-                    />
-                  </div>
+                    {/* PMJAY Settlement Date */}
+                    {(watchSettlementStatus === 'completed' || patient.settlement_status === 'completed' || patient.settlement_date) && (
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">PMJAY Settlement Date & Time</label>
+                        <input
+                          type="datetime-local"
+                          max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          disabled={patient.settlement_status !== 'pending' && patient.settlement_status !== 'completed'}
+                          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+                          {...register('settlement_date')}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="space-y-1 p-3 bg-gray-50 border border-gray-100 rounded-xl">
@@ -624,7 +712,6 @@ function EditPatientModal({ patient, open, onClose }) {
               </div>
             )}
           </>
-        )}
 
         {/* Global Validation Errors */}
         {Object.keys(errors).length > 0 && (
@@ -654,12 +741,12 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
     ? (doc.presigned_url.startsWith('http') ? doc.presigned_url : `${CONST_API_URL}${doc.presigned_url}`)
     : null;
 
-  const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
+  const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name || doc.file_name.startsWith('photo_')
     ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
-    : doc.file_name;
+    : doc.file_name.replace(/_\d{13}/g, '');
 
   const isCompressing = doc.mime_type === 'application/pdf' &&
-    doc.file_size >= 2 * 1024 * 1024 &&
+    doc.file_size >= 1 * 1024 * 1024 &&
     !doc.is_compressed &&
     (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000;
 
@@ -676,7 +763,6 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
     // Use the backend-provided download URL which includes Content-Disposition
     const a = document.createElement('a');
     a.href = downloadUrl;
-    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -760,7 +846,12 @@ function DocumentCard({ doc, onDelete, canDelete, onView, isSelected, onSelect }
         <p className="text-xs text-gray-400 mt-0.5">
           {format(new Date(doc.created_at), 'dd MMM yyyy, hh:mm a')}
         </p>
-        <p className="text-xs text-gray-400 truncate">by {doc.uploaded_by_name}</p>
+        <div className="flex items-center justify-between mt-0.5">
+          <p className="text-xs text-gray-400 truncate">by {doc.uploaded_by_name}</p>
+          <span className="text-[10px] text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+            {formatBytes(doc.file_size)}
+          </span>
+        </div>
         {doc.updated_by && (
           <p className="text-[10px] text-blue-500 font-bold truncate mt-0.5 bg-blue-50 rounded px-1 w-fit">
             Edited by {doc.updated_by_name}
@@ -827,7 +918,7 @@ export default function PatientDetailPage() {
       refetchInterval: (data) => {
         const hasCompressing = data?.data?.some(doc => 
           doc.mime_type === 'application/pdf' && 
-          doc.file_size >= 2 * 1024 * 1024 && 
+          doc.file_size >= 1 * 1024 * 1024 && 
           !doc.is_compressed && 
           (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000
         );
@@ -838,7 +929,7 @@ export default function PatientDetailPage() {
 
   const hasCompressingDocs = docsData?.data?.some(doc => 
     doc.mime_type === 'application/pdf' && 
-    doc.file_size >= 2 * 1024 * 1024 && 
+    doc.file_size >= 1 * 1024 * 1024 && 
     !doc.is_compressed && 
     (Date.now() - new Date(doc.created_at).getTime()) < 5 * 60 * 1000
   ) || false;
@@ -931,12 +1022,17 @@ export default function PatientDetailPage() {
         // Single file download
         const doc = selectedDocObjs[0];
         const blob = await documentApi.downloadRaw(doc.id);
-        const isImage = doc.mime_type?.startsWith('image/');
-        const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
-        const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
-          ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
-          : doc.file_name;
-        const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
+        let baseName = '';
+        if (doc.doc_type === 'other' && doc.file_name && !doc.file_name.startsWith('blob') && !doc.file_name.startsWith('image') && !doc.file_name.startsWith('photo_')) {
+          baseName = doc.file_name.replace(/\.[^/.]+$/, "");
+        } else {
+          baseName = DOC_TYPE_LABELS[doc.doc_type] || 'Document';
+        }
+        const uhid = patient.uhid || doc.patient_uhid || '';
+        let downloadName = `${baseName} ${uhid}`.trim().replace(/[!@#$%^&*()_+.\/,><?";:]/g, '');
+        
+        const ext = doc.mime_type === 'application/pdf' ? '.pdf' : (doc.mime_type === 'image/png' ? '.png' : '.jpg');
+        const name = `${downloadName}${ext}`;
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -947,16 +1043,30 @@ export default function PatientDetailPage() {
       } else {
         // Multiple files as ZIP
         const zip = new JSZip();
+        const usedNames = new Set();
 
         for (const doc of selectedDocObjs) {
           try {
             const blob = await documentApi.downloadRaw(doc.id);
-            const isImage = doc.mime_type?.startsWith('image/');
-            const ext = doc.file_name?.includes('.') ? '' : (isImage ? '.jpg' : '.pdf');
-            const displayName = doc.file_name === 'blob' || doc.file_name === 'image' || !doc.file_name
-              ? `${DOC_TYPE_LABELS[doc.doc_type] || 'Document'}`
-              : doc.file_name;
-            const name = displayName.includes('.') ? displayName : `${displayName}${ext}`;
+            let baseName = '';
+            if (doc.doc_type === 'other' && doc.file_name && !doc.file_name.startsWith('blob') && !doc.file_name.startsWith('image') && !doc.file_name.startsWith('photo_')) {
+              baseName = doc.file_name.replace(/\.[^/.]+$/, "");
+            } else {
+              baseName = DOC_TYPE_LABELS[doc.doc_type] || 'Document';
+            }
+            const uhid = patient.uhid || doc.patient_uhid || '';
+            let downloadName = `${baseName} ${uhid}`.trim().replace(/[!@#$%^&*()_+.\/,><?";:]/g, '');
+            
+            const ext = doc.mime_type === 'application/pdf' ? '.pdf' : (doc.mime_type === 'image/png' ? '.png' : '.jpg');
+            
+            let name = `${downloadName}${ext}`;
+            let counter = 1;
+            while (usedNames.has(name)) {
+              name = `${downloadName} (${counter})${ext}`;
+              counter++;
+            }
+            usedNames.add(name);
+            
             zip.file(name, blob);
           } catch (e) {
             console.error(`Failed to download document ${doc.id} for zipping:`, e);
@@ -1025,11 +1135,9 @@ export default function PatientDetailPage() {
               <Trash2 size={13} /> Delete ({selectedDocs.size})
             </Button>
           )}
-          {!['pcc', 'nursing'].includes(user?.role) && (
-            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
-              <Edit2 size={13} /> Edit
-            </Button>
-          )}
+          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
+            <Edit2 size={13} /> Edit
+          </Button>
           {patient.hospital_status === 'discharged' && (
             <Button 
               variant="success" 
@@ -1049,11 +1157,9 @@ export default function PatientDetailPage() {
           )}
         </div>
         <div className="sm:hidden flex gap-2">
-          {!['pcc', 'nursing'].includes(user?.role) && (
-            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
-              <Edit2 size={13} /> Edit
-            </Button>
-          )}
+          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex-1">
+            <Edit2 size={13} /> Edit
+          </Button>
           {canUpload && (
             <Button size="sm" onClick={() => setUploadOpen(true)} className="flex-1">
               <Upload size={13} /> Upload
@@ -1304,19 +1410,26 @@ export default function PatientDetailPage() {
             description="No documents found for this patient."
           />
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3">
-            {docs.map((doc) => (
-              <DocumentCard
-                key={doc.id}
-                doc={doc}
-                canDelete={canEdit(doc.uploaded_by, doc.uploader_role)}
-                onDelete={setDeleteDoc}
-                onView={setViewDoc}
-                isSelected={selectedDocs.has(doc.id)}
-                onSelect={() => handleToggleDocSelect(doc)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3">
+              {docs.map((doc) => (
+                <DocumentCard
+                  key={doc.id}
+                  doc={doc}
+                  canDelete={canEdit(doc.uploaded_by, doc.uploader_role)}
+                  onDelete={setDeleteDoc}
+                  onView={setViewDoc}
+                  isSelected={selectedDocs.has(doc.id)}
+                  onSelect={() => handleToggleDocSelect(doc)}
+                />
+              ))}
+            </div>
+            {docsPagination && (
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <Pagination pagination={docsPagination} onPageChange={setDocPage} />
+              </div>
+            )}
+          </>
         )}
       </div>
 
