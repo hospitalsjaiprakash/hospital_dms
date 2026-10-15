@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { patientApi, documentApi } from '../services/api';
 import * as offlineQueue from '../services/offlineQueue';
+import * as actionQueue from '../services/actionQueue';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
 import { Card, Badge, Button, Select, Spinner, EmptyState, Modal, Pagination } from '../components/common';
@@ -79,13 +80,34 @@ function ReadmitModal({ patient, open, onClose }) {
       }
 
       // Step 1: Create the new admission
-      const result = await patientApi.create({
-        uhid: patient.uhid,
-        name: patient.name,
-        ip_number: data.ip_number.trim(),
-        admission_date: data.admission_date,
-      });
-      const newPatientId = result.data.id;
+      let newPatientId;
+      try {
+        const result = await patientApi.create({
+          uhid: patient.uhid,
+          name: patient.name,
+          ip_number: data.ip_number.trim(),
+          admission_date: data.admission_date,
+        });
+        newPatientId = result.data.id;
+      } catch (err) {
+        if (!navigator.onLine || !err.response || err.code === 'ERR_NETWORK') {
+          newPatientId = 'temp_' + Date.now();
+          await actionQueue.enqueueAction({
+            url: '/patients',
+            method: 'POST',
+            data: {
+              uhid: patient.uhid,
+              name: patient.name,
+              ip_number: data.ip_number.trim(),
+              admission_date: data.admission_date,
+              _tempId: newPatientId
+            }
+          });
+          toast.success('Offline mode: Readmission queued for sync.');
+        } else {
+          throw err;
+        }
+      }
 
       // Step 2: Upload initial documents if any
       if (docFiles.length > 0) {
@@ -156,7 +178,11 @@ function ReadmitModal({ patient, open, onClose }) {
         ? `Re-admitted with ${docFiles.length} document(s)! IP: ${data.ip_number}`
         : `Patient re-admitted! IP: ${data.ip_number}`);
       handleClose();
-      navigate(`/patients/${newPatientId}`);
+      if (newPatientId && !newPatientId.toString().startsWith('temp_')) {
+        navigate(`/patients/${newPatientId}`);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       toast.error(err.message || 'Re-admission failed');
     } finally {
@@ -381,15 +407,43 @@ function EditPatientModal({ patient, open, onClose }) {
   }, [watchHospitalStatus, setValue]);
 
   const { mutateAsync, isLoading } = useMutation(
-    (data) => patientApi.update(patient.id, data)
+    async (data) => {
+      try {
+        return await patientApi.update(patient.id, data);
+      } catch (err) {
+        if (!navigator.onLine || !err.response || err.code === 'ERR_NETWORK') {
+          await actionQueue.enqueueAction({
+            url: `/patients/${patient.id}`,
+            method: 'POST',
+            data
+          });
+          return { data: { ...patient, ...data } };
+        }
+        throw err;
+      }
+    },
+    {
+      onSuccess: (res, variables) => {
+        // Optimistically update the patient detail in the cache
+        queryClient.setQueryData(['patient', patient.id], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            data: { ...old.data, ...variables }
+          };
+        });
+      }
+    }
   );
 
-  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
+  const isNursing = user?.role === 'nursing';
+  const isPCC = user?.role === 'pcc';
+  const isRestricted = isNursing;
 
   const onSubmit = async (data) => {
     try {
       const payload = { ...data };
-      if (isRestricted) {
+      if (isNursing) {
         // Prune fields that restricted roles cannot update to prevent backend 403
         delete payload.hospital_status;
         delete payload.settlement_status;
@@ -397,6 +451,12 @@ function EditPatientModal({ patient, open, onClose }) {
         delete payload.document_submission_date;
         delete payload.pending_date;
         delete payload.settlement_date;
+      } else if (isPCC) {
+        delete payload.settlement_status;
+        delete payload.document_submission_date;
+        delete payload.pending_date;
+        delete payload.settlement_date;
+        if (payload.discharge_date === '') payload.discharge_date = null;
       } else {
         if (payload.discharge_date === '') payload.discharge_date = null;
         if (payload.document_submission_date === '') payload.document_submission_date = null;
@@ -603,7 +663,7 @@ function EditPatientModal({ patient, open, onClose }) {
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">Hospital Status</label>
               <select 
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:opacity-60 disabled:cursor-not-allowed"
-                disabled={patient.hospital_status === 'discharged' && user?.role !== 'admin'}
+                disabled={isNursing || (patient.hospital_status === 'discharged' && user?.role !== 'admin')}
                 {...register('hospital_status')}
               >
                 <option value="active">Active (Admitted)</option>
@@ -646,7 +706,7 @@ function EditPatientModal({ patient, open, onClose }) {
                   {errors.discharge_date && <p className="text-xs text-red-500 mt-1">{errors.discharge_date.message}</p>}
                 </div>
 
-                {!isRestricted && (
+                {!['pcc', 'nursing'].includes(user?.role) && (
                   <>
                     {/* PMJAY Settlement Dropdown */}
                     <div className="space-y-1">

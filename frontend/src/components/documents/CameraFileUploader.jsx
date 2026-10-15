@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import imageCompression from 'browser-image-compression';
-import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn, Scan, Zap, ZapOff } from 'lucide-react';
+import { Upload, Camera, X, CheckCircle, FileText as FilePdf, ZoomIn, Scan, Zap, ZapOff, Edit2, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Button } from '../common';
@@ -38,14 +38,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [videoReady, setVideoReady] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [stagedPhoto, setStagedPhoto] = useState(null);
-  const [gpsData, setGpsData] = useState(null);
+  const [gpsData, setGpsData] = useState({ latitude: 22.224743, longitude: 84.797015 });
   // Pre-load cached address from localStorage so GPS tag is immediate even offline
-  const [address, setAddress] = useState(() => {
-    try { return localStorage.getItem('gps_last_address') || null; } catch { return null; }
-  });
-  const [addressCached, setAddressCached] = useState(() => {
-    try { return !!localStorage.getItem('gps_last_address'); } catch { return false; }
-  });
+  const [address, setAddress] = useState("JPHRC, Dayanand Nagar, Dandiapali, Rourkela, Odisha 769004");
+  const [addressCached, setAddressCached] = useState(true);
   const [fetchingGps, setFetchingGps] = useState(false);
   const [liveTime, setLiveTime] = useState(new Date());
   const [watchId, setWatchId] = useState(null);
@@ -53,6 +49,20 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [mapError, setMapError] = useState(false); // true when static map fails to load
+
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const effectiveGpsData = { latitude: 22.224743, longitude: 84.797015 };
 
   // True when viewport is mobile/tablet (< 1024px = below lg breakpoint)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024);
@@ -64,6 +74,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   }, []);
 
   const streamRef = useRef(null);
+  const timerRef = useRef(null);
 
   const formatBytes = (b) => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
@@ -72,6 +83,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
         streamRef.current = null;
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, []);
@@ -93,6 +108,10 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
     if (watchId) {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
     setVideoReady(false);
     setMode('grid');
@@ -141,42 +160,20 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       // Start GPS tracking for live overlay
       const id = navigator.geolocation.watchPosition(
         async (pos) => {
-          setGpsData(pos.coords);
-          // Always cache the latest coordinates (works offline)
+          // Hardcoded GPS data and address as requested
+          setGpsData({ latitude: 22.224743, longitude: 84.797015 });
+          
           try {
             localStorage.setItem('gps_last_coords', JSON.stringify({
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
+              lat: 22.224743,
+              lng: 84.797015,
             }));
           } catch { }
-          // Only fetch address if not yet set or first time
-          if (!address || addressCached) {
-            if (!navigator.onLine) {
-              // Offline — keep using the cached address (already loaded from localStorage)
-              setAddressCached(true);
-              return;
-            }
-            try {
-              const res = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`
-              );
-              const data = await res.json();
-              setAddress(data.display_name);
-              setAddressCached(false);
-              // Cache fresh address
-              try { localStorage.setItem('gps_last_address', data.display_name); } catch { }
-            } catch (e) {
-              // Geocoding failed (offline or timeout) — use cached address
-              console.error('Geocoding error', e);
-              const cached = localStorage.getItem('gps_last_address');
-              if (cached && !address) {
-                setAddress(cached);
-                setAddressCached(true);
-              }
-            }
-          }
+          
+          setAddress("JPHRC, Dayanand Nagar, Dandiapali, Rourkela, Odisha 769004");
+          setAddressCached(true);
         },
-        () => setGpsData(null),
+        () => setGpsData({ latitude: 22.224743, longitude: 84.797015 }),
         { enableHighAccuracy: true }
       );
       setWatchId(id);
@@ -185,8 +182,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       setMapError(false);
 
       // Start time ticker
-      const timer = setInterval(() => setLiveTime(new Date()), 1000);
-      return () => clearInterval(timer);
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => setLiveTime(new Date()), 1000);
     } catch (err) {
       console.error('Camera error:', err);
       toast.error('Could not access camera. Please allow camera permission.');
@@ -222,22 +219,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoEl, 0, 0);
 
-      // 1. Fetch Static Map (Optional but recommended for the look)
-      let mapImg = null;
-      if (gpsData && navigator.onLine) {
-        try {
-          const mapUrl = `https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=14&l=map&size=200,200`;
-          mapImg = await new Promise((resolve) => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.onload = () => resolve(img);
-            img.onerror = () => resolve(null);
-            img.src = mapUrl;
-          });
-        } catch (e) { console.error("Map fetch failed", e); }
-      }
-
-      // 2. Draw sophisticated GPS Tag Overlay
+      // Draw sophisticated GPS Tag Overlay
       const scale = canvas.width / 1000;
       const cardHeight = 240 * scale;
       const cardPadding = 20 * scale;
@@ -247,30 +229,6 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       ctx.fillRect(0, canvas.height - cardHeight, canvas.width, cardHeight);
 
       let textX = cardPadding;
-
-      // Draw Mini Map if available
-      if (mapImg) {
-        const mapSize = cardHeight - (cardPadding * 2);
-        const mapY = canvas.height - cardHeight + cardPadding;
-
-        ctx.drawImage(mapImg, cardPadding, mapY, mapSize, mapSize);
-
-        // Map border
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2 * scale;
-        ctx.strokeRect(cardPadding, mapY, mapSize, mapSize);
-
-        // Map center crosshair dot
-        ctx.fillStyle = '#3b82f6';
-        ctx.beginPath();
-        ctx.arc(cardPadding + mapSize / 2, mapY + mapSize / 2, 6 * scale, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2 * scale;
-        ctx.stroke();
-
-        textX = cardPadding + mapSize + (cardPadding);
-      }
 
       const now = liveTime;
       const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
@@ -286,15 +244,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
       // Line 1: Location Title (City, State)
       ctx.fillStyle = 'white';
-      const addressParts = address ? address.split(',').map(s => s.trim()) : [];
-      const cityState = addressParts.length > 2 ? `${addressParts[1]}, ${addressParts[2]}` : 'Locating...';
+      const cityState = "JPHRC, Dayanand Nagar";
       ctx.font = `bold ${32 * scale}px Inter, sans-serif`;
       ctx.fillText(cityState, textX, canvas.height - cardHeight + cardPadding + (45 * scale));
 
       // Line 2: Full Address (Smaller, Multi-line if needed)
       ctx.font = `${18 * scale}px Inter, sans-serif`;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      const fullAddress = address || 'Fetching full address details...';
+      const fullAddress = "JPHRC, Dayanand Nagar, Dandiapali, Rourkela, Odisha 769004";
       const addressWords = fullAddress.split(' ');
       let line = '';
       let currentY = canvas.height - cardHeight + cardPadding + (75 * scale);
@@ -316,8 +273,8 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       // Line 3: Lat/Long Info
       ctx.fillStyle = '#fcd34d'; // amber-300
       ctx.font = `bold ${20 * scale}px Roboto Mono, monospace`;
-      const latStr = gpsData ? gpsData.latitude.toFixed(6) : '--.------';
-      const lonStr = gpsData ? gpsData.longitude.toFixed(6) : '--.------';
+      const latStr = effectiveGpsData ? effectiveGpsData.latitude.toFixed(6) : '--.------';
+      const lonStr = effectiveGpsData ? effectiveGpsData.longitude.toFixed(6) : '--.------';
       const coordStr = `LAT: ${latStr}°  |  LONG: ${lonStr}°`;
       ctx.fillText(coordStr, textX, canvas.height - 45 * scale);
 
@@ -521,14 +478,14 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent pt-16 text-white flex gap-3 items-end">
               {/* Live Map Box */}
               <div className="w-[84px] h-[84px] bg-gray-900 rounded border border-white/40 flex-shrink-0 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.8)]">
-                {gpsData && !mapError ? (
+                {effectiveGpsData && !mapError ? (
                   <img
-                    src={`https://static-maps.yandex.ru/1.x/?ll=${gpsData.longitude},${gpsData.latitude}&z=15&l=map&size=100,100`}
+                    src={`https://static-maps.yandex.ru/1.x/?ll=${effectiveGpsData.longitude},${effectiveGpsData.latitude}&z=15&l=map&size=100,100`}
                     className="w-full h-full object-cover opacity-90 contrast-125 saturate-50"
                     alt="map"
                     onError={() => setMapError(true)}
                   />
-                ) : gpsData && mapError ? (
+                ) : effectiveGpsData && mapError ? (
                   // Offline map fallback — show a coordinate grid placeholder
                   <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800 gap-0.5 p-1">
                     <div className="grid grid-cols-3 gap-px w-full h-full opacity-30">
@@ -544,7 +501,7 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
                     <span className="text-[8px] font-bold text-gray-400 tracking-wider">LOCATING</span>
                   </div>
                 )}
-                {gpsData && (
+                {effectiveGpsData && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_#3b82f6] border border-white animate-pulse" />
                   </div>
@@ -566,24 +523,16 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
                   )}
                 </div>
                 <div className="font-black text-[15px] truncate drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-white">
-                  {address
-                    ? address.split(',').slice(0, 2).join(', ') + (addressCached ? ' 🇮🇳' : ' 🇮🇳')
-                    : gpsData
-                      ? `${gpsData.latitude.toFixed(4)}°N, ${gpsData.longitude.toFixed(4)}°E`
-                      : 'Determining location...'}
+                  JPHRC, Dayanand Nagar 🇮🇳
                 </div>
                 <div className="text-[10px] text-white/80 line-clamp-1 leading-snug drop-shadow-md font-medium">
-                  {address
-                    ? address.split(',').slice(2).join(', ').trim() + (addressCached ? ' (cached)' : '')
-                    : gpsData
-                      ? 'GPS signal acquired · Address unavailable offline'
-                      : 'Fetching address details...'}
+                  Dandiapali, Rourkela, Odisha 769004
                 </div>
 
                 <div className="flex flex-col mt-1.5 bg-black/50 p-1.5 px-2 rounded border border-white/10 backdrop-blur-md w-fit">
                   <div className="flex gap-3 text-[10px] font-mono font-bold text-blue-300 tracking-tight">
-                    <span>LAT {gpsData ? gpsData.latitude.toFixed(6) : '--.------'}°</span>
-                    <span>LNG {gpsData ? gpsData.longitude.toFixed(6) : '--.------'}°</span>
+                    <span>LAT {effectiveGpsData ? effectiveGpsData.latitude.toFixed(6) : '--.------'}°</span>
+                    <span>LNG {effectiveGpsData ? effectiveGpsData.longitude.toFixed(6) : '--.------'}°</span>
                   </div>
                   <div className="text-[9px] font-bold text-gray-300 mt-0.5 uppercase tracking-wider">
                     {liveTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • {liveTime.toLocaleTimeString('en-US', { hour12: false })}
@@ -674,21 +623,24 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   if ((isLegacySingle || single) && files.length > 0) {
     const f = files[0];
     return (
-      <div
-        className="border-2 border-dashed border-green-200 bg-green-50 rounded-xl p-6 text-center cursor-pointer hover:bg-green-100 transition-colors"
-        onClick={() => {
-          if (f.scannerPages) {
-            setScannerOpen({ index: 0, pages: f.scannerPages, name: f.scannerFileName });
-          } else if (f.type === 'image') {
-            setPreviewPhoto(f);
-          }
-        }}
-      >
-        <div className="space-y-2">
-          {f.type === 'image' ? (
-            <img src={f.preview} alt="Preview" className="w-24 h-24 object-cover rounded-lg mx-auto border border-green-200 shadow-sm" />
+      <div className="border-2 border-dashed border-green-200 bg-green-50 rounded-xl p-6 text-center">
+        <div className="relative inline-block w-full text-center">
+          {f.type === 'image' || f.scannerPages ? (
+            <div className="relative inline-block cursor-pointer" onClick={() => {
+              if (f.scannerPages) setScannerOpen({ index: 0, pages: f.scannerPages, name: f.scannerFileName });
+              else setPreviewPhoto(f);
+            }}>
+              <img src={f.scannerPages ? f.scannerPages[0].preview : f.preview} alt="Preview" 
+                className="max-h-[200px] object-contain rounded-xl border-2 border-white shadow-lg mx-auto"
+              />
+              {f.scannerPages && f.scannerPages.length > 1 && (
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded shadow-sm flex items-center gap-1">
+                  <Layers size={12} /> {f.scannerPages.length} Pages
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="w-16 h-16 bg-red-50 rounded-xl flex items-center justify-center mx-auto">
+            <div className="max-h-[200px] w-[150px] mx-auto bg-red-50 rounded-xl border-2 border-white shadow-lg flex flex-col items-center justify-center gap-2 p-4">
               <FilePdf className="w-8 h-8 text-red-500" />
             </div>
           )}
@@ -698,10 +650,18 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
             <CheckCircle size={14} /><span className="text-xs">Ready to upload</span>
           </div>
           {!disabled && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); removeFile(0); }}
-              className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mx-auto mt-2 bg-white px-2 py-1 rounded-md border border-red-100 relative z-10">
-              <X size={12} /> Remove file
-            </button>
+            <div className="flex gap-2 justify-center mt-2 relative z-10">
+              {f.scannerPages && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); setScannerOpen({ index: 0, pages: f.scannerPages, name: f.scannerFileName }); }}
+                  className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 bg-white px-2 py-1 rounded-md border border-blue-100 shadow-sm transition-colors">
+                  <Edit2 size={12} /> Edit pages
+                </button>
+              )}
+              <button type="button" onClick={(e) => { e.stopPropagation(); removeFile(0); }}
+                className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 bg-white px-2 py-1 rounded-md border border-red-100 shadow-sm transition-colors">
+                <X size={12} /> Remove file
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -732,24 +692,24 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
                   setPreviewPhoto(f);
                 }
               }}>
-                {f.type === 'image' ? (
-                  <img src={f.preview} alt={`Photo ${i + 1}`}
+                {f.type === 'image' || f.scannerPages ? (
+                  <img src={f.scannerPages ? f.scannerPages[0].preview : f.preview} alt={`Photo ${i + 1}`}
                     className="w-16 h-16 object-cover rounded-xl border-2 border-white shadow-md group-hover:scale-105 transition-transform" />
                 ) : (
                   <div className="w-16 h-16 bg-red-50 rounded-xl border-2 border-white shadow-md flex items-center justify-center">
                     <FilePdf size={22} className="text-red-400" />
                   </div>
                 )}
-                <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <ZoomIn size={12} className="text-white opacity-0 group-hover:opacity-100" />
+                <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
+                  {f.scannerPages ? <Edit2 size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" /> : <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />}
                 </div>
-                <span className="absolute bottom-0.5 left-0.5 bg-black/50 text-white text-[8px] font-bold px-1 rounded">
-                  {i + 1}
+                <span className="absolute bottom-0.5 left-0.5 bg-black/50 text-white text-[8px] font-bold px-1 rounded flex items-center gap-0.5 pointer-events-none">
+                  {i + 1} {f.scannerPages && f.scannerPages.length > 1 && `· ${f.scannerPages.length}p`}
                 </span>
                 {!disabled && (
                   <button type="button"
                     onClick={(e) => { e.stopPropagation(); removeFile(i); }}
-                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600">
+                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600 z-10">
                     <X size={8} />
                   </button>
                 )}
@@ -811,25 +771,27 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
           <p className="text-[10px] font-bold text-gray-700">Gallery / PDF</p>
         </div>
 
-        {/* Option 3: Document Scanner - Available on all devices */}
-        <button
-          type="button"
-          onClick={() => setScannerOpen(true)}
-          disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)}
-          className={clsx(
-            "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
-            "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
-            (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed"
-          )}
-        >
-          <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-            <Scan className="w-5 h-5 text-purple-600" />
-            <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
-              SCAN
+        {/* Option 3: Document Scanner - Mobile / Tablet only */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            disabled={disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)}
+            className={clsx(
+              "flex flex-col items-center justify-center py-3 px-1 rounded-xl border-2 transition-all",
+              "border-purple-100 bg-purple-50/50 hover:bg-purple-50 hover:border-purple-300 group",
+              (disabled || compressing || (!(isLegacySingle || single) && files.length >= 10)) && "opacity-60 cursor-not-allowed"
+            )}
+          >
+            <div className="relative w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+              <Scan className="w-5 h-5 text-purple-600" />
+              <div className="absolute -top-1 -right-1 bg-purple-600 text-[7px] text-white font-black px-1 rounded-sm border border-white">
+                SCAN
+              </div>
             </div>
-          </div>
-          <p className="text-[10px] font-bold text-gray-800">Scanner</p>
-        </button>
+            <p className="text-[10px] font-bold text-gray-800">Scanner</p>
+          </button>
+        )}
       </div>
 
       {isMobile && (

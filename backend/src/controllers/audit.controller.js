@@ -3,7 +3,7 @@ const { sendSuccess, sendPaginated, getPaginationParams } = require('../utils/re
 
 const getLogs = async (req, res) => {
   const { page, limit } = getPaginationParams(req.query);
-  const { entity_type, entity_id, user_id, action, patient_activity_only } = req.query;
+  const { entity_type, entity_id, user_id, action, patient_activity_only, start_date, end_date } = req.query;
 
   const { total, logs } = await getAuditLogs({ 
     entityType: entity_type, 
@@ -15,6 +15,8 @@ const getLogs = async (req, res) => {
     requesterRole: req.user.role,
     requesterId: req.user.id,
     patientActivityOnly: patient_activity_only === 'true',
+    startDate: start_date,
+    endDate: end_date,
   });
 
   return sendPaginated(res, logs, total, page, limit);

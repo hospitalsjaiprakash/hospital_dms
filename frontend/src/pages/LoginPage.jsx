@@ -26,10 +26,10 @@ export default function LoginPage() {
   };
 
   return (
-<AuthLayout reverse={false} backgroundImage={JPHBUILD}>
+    <AuthLayout reverse={false} backgroundImage={JPHBUILD}>
       <div className="animate-fade-in">
         <div className="mb-8">
-          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Sign In</h2>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Sign In Now</h2>
           <p className="text-gray-500 text-sm mt-2 font-medium">Access your medical document portal</p>
         </div>
 
@@ -71,9 +71,9 @@ export default function LoginPage() {
             {errors.password && <p className="text-xs text-red-600 mt-1 ml-1">{errors.password.message}</p>}
           </div>
 
-          <Button 
-            type="submit" 
-            loading={isSubmitting} 
+          <Button
+            type="submit"
+            loading={isSubmitting}
             className="w-full !rounded-xl !py-4 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transform active:scale-[0.98] transition-all font-bold text-base"
             size="lg"
           >

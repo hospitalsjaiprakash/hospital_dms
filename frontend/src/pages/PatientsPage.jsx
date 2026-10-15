@@ -28,8 +28,8 @@ const fmtTime = (d) => d ? format(new Date(d), 'hh:mm a') : '';
 export default function PatientsPage() {
   const location = useLocation();
   const { user } = useAuth();
-  // PCC and Nursing are NOT allowed to bulk-discharge/settle patients
-  const canBulkDischarge = !['pcc', 'nursing'].includes(user?.role);
+  // PCC is allowed to perform bulk patient discharge (active tab only), but not doc submission, pending, or settlement
+  const canBulkDischarge = !['nursing'].includes(user?.role);
   const urlTab = new URLSearchParams(location.search).get('tab') || 'all';
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState(urlTab);
@@ -110,7 +110,11 @@ export default function PatientsPage() {
   const patients = data?.data || [];
   const pagination = data?.pagination;
 
-  const canBulkSelect = canBulkDischarge && (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged' || activeTab === 'document_submission');
+  const canBulkSelect = canBulkDischarge && (
+    user?.role === 'pcc'
+      ? activeTab === 'active'
+      : (activeTab === 'active' || activeTab === 'pending' || activeTab === 'discharged' || activeTab === 'document_submission')
+  );
   const selectedIds = selectedPatients.map(p => p.id);
 
   const showDischargeCol = activeTab === 'discharged' || activeTab === 'document_submission' || activeTab === 'pending' || activeTab === 'settled';
@@ -235,7 +239,7 @@ export default function PatientsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canBulkDischarge && selectedPatients.length > 0 && (
+          {canBulkSelect && selectedPatients.length > 0 && (
             <>
               <button
                 onClick={() => setSelectedPatients([])}

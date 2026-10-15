@@ -6,6 +6,7 @@ import ReactSelect from 'react-select';
 import clsx from 'clsx';
 import { patientApi, documentApi } from '../services/api';
 import * as offlineQueue from '../services/offlineQueue';
+import * as actionQueue from '../services/actionQueue';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
 import { Button, Input, Card, Badge, Modal } from '../components/common';
@@ -41,7 +42,7 @@ export default function NewPatientPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
 
-  const isRestricted = ['pcc', 'nursing'].includes(user?.role);
+  const isRestricted = ['nursing'].includes(user?.role);
 
   // Handle UHID lookup in modal - Auto-search when 11 chars entered
   const handleUhidChange = async (value) => {
@@ -156,8 +157,24 @@ export default function NewPatientPage() {
       }
 
       // Step 1: Create Patient
-      const res = await createPatientAsync(data);
-      const patientId = res.data.id;
+      let patientId;
+      try {
+        const res = await createPatientAsync(data);
+        patientId = res.data.id;
+      } catch (err) {
+        if (!navigator.onLine || !err.response || err.code === 'ERR_NETWORK') {
+          // Generate a temporary ID so we can associate documents and redirect
+          patientId = 'temp_' + Date.now();
+          await actionQueue.enqueueAction({
+            url: '/patients',
+            method: 'POST',
+            data: { ...data, _tempId: patientId }
+          });
+          toast.success('Offline mode: Patient creation queued for sync.');
+        } else {
+          throw err;
+        }
+      }
 
       // Step 2: Upload all documents
       if (docFiles.length > 0) {
@@ -243,7 +260,12 @@ export default function NewPatientPage() {
       queryClient.invalidateQueries('stats');
       queryClient.invalidateQueries('audit-logs');
       toast.success(docFiles.length > 0 ? `Patient and ${docFiles.length} document(s) saved!` : 'Patient created successfully!');
-      navigate(`/patients/${patientId}`);
+      
+      if (patientId && !patientId.toString().startsWith('temp_')) {
+        navigate(`/patients/${patientId}`);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       toast.error(err.message || 'An error occurred');
     } finally {

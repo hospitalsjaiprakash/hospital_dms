@@ -22,9 +22,8 @@ const poolConfig = process.env.DATABASE_URL
 
 const pool = new Pool(poolConfig);
 
-pool.on('connect', (client) => {
-  client.query("SET timezone = 'UTC'");
-});
+// Enforce UTC timezone at the process level instead of per-connection queries to avoid pg client concurrency bugs
+process.env.TZ = 'UTC';
 
 pool.on('error', (err) => {
   logger.error('Unexpected PostgreSQL pool error', { error: err.message });

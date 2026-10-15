@@ -16,6 +16,8 @@ import { useDebounce } from '../hooks/useDebounce';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import ReactSelect from 'react-select';
+import * as offlineQueue from '../services/offlineQueue';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 
 const formatBytes = (bytes) => {
   if (!bytes || bytes === 0) return '0 KB';
@@ -33,8 +35,37 @@ export default function DocumentsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
+  const { retryAll, refreshCount } = useOfflineSync();
+  const [offlineDocs, setOfflineDocs] = useState([]);
+  const [previewOfflineUrl, setPreviewOfflineUrl] = useState(null);
+
+  const loadOfflineDocs = async () => {
+    try {
+      const all = await offlineQueue.getAll();
+      setOfflineDocs(all || []);
+    } catch {
+      setOfflineDocs([]);
+    }
+  };
+
+  useEffect(() => {
+    loadOfflineDocs();
+    const handler = () => loadOfflineDocs();
+    window.addEventListener('offline-sync-complete', handler);
+    window.addEventListener('online', handler);
+    window.addEventListener('offline', handler);
+    const interval = setInterval(loadOfflineDocs, 3000);
+    return () => {
+      window.removeEventListener('offline-sync-complete', handler);
+      window.removeEventListener('online', handler);
+      window.removeEventListener('offline', handler);
+      clearInterval(interval);
+    };
+  }, []);
   
   const debouncedSearch = useDebounce(search, 300);
 
@@ -45,7 +76,9 @@ export default function DocumentsPage() {
       limit: 20,
       search: debouncedSearch || undefined,
       doc_type: docTypeFilter || undefined,
-      today: isTodayOnly ? 'true' : undefined
+      today: isTodayOnly ? 'true' : undefined,
+      start_date: startDate || undefined,
+      end_date: endDate || undefined
     }),
     { keepPreviousData: true }
   );
@@ -85,6 +118,110 @@ export default function DocumentsPage() {
           </Link>
         )}
       </div>
+
+      {/* Offline Drafts & Queued Uploads Section */}
+      {offlineDocs.length > 0 && (
+        <Card className="border-2 border-amber-300 bg-amber-50/70 shadow-sm overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-amber-200/60 gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                <File size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-amber-950">
+                  Browser Drafts & Queued Uploads ({offlineDocs.length})
+                </h2>
+                <p className="text-xs text-amber-800">
+                  {!navigator.onLine 
+                    ? "Currently offline — these documents will automatically sync once internet connection returns." 
+                    : "Stored locally in your browser. Auto-syncing when connection is stable or you retry manually."}
+                </p>
+              </div>
+            </div>
+            {navigator.onLine && (
+              <Button 
+                size="sm" 
+                onClick={async () => { await retryAll(); loadOfflineDocs(); }}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5"
+              >
+                Sync All Now
+              </Button>
+            )}
+          </div>
+
+          <div className="divide-y divide-amber-200/50 bg-white rounded-xl border border-amber-200/60 overflow-hidden">
+            {offlineDocs.map((doc) => (
+              <div key={doc.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-amber-50/30 transition-colors">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-amber-100/80 flex items-center justify-center flex-shrink-0 text-amber-800 font-bold text-xs">
+                    {doc.docType === 'pdf' ? <FileText size={16} /> : <File size={16} />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-gray-800 truncate" title={doc.fileName}>{doc.fileName}</span>
+                      <span className={clsx(
+                        "text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider",
+                        doc.status === 'pending' && "bg-amber-100 text-amber-800 border border-amber-300",
+                        doc.status === 'syncing' && "bg-blue-100 text-blue-800 border border-blue-300 animate-pulse",
+                        doc.status === 'failed' && "bg-red-100 text-red-800 border border-red-300",
+                        doc.status === 'draft' && "bg-purple-100 text-purple-800 border border-purple-300"
+                      )}>
+                        {doc.status === 'pending' ? 'Queued for Upload' : doc.status === 'syncing' ? 'Syncing...' : doc.status === 'failed' ? 'Failed (Retry)' : 'Browser Draft'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {DOC_TYPE_LABELS[doc.docType] || doc.docType} • {formatBytes(doc.fileBlob?.size || 0)}
+                      {doc.patientId && doc.patientId !== 'draft' && ` • Patient ID #${doc.patientId}`}
+                      {doc.notes && ` • "${doc.notes}"`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 justify-end flex-shrink-0">
+                  {doc.fileBlob && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = URL.createObjectURL(doc.fileBlob);
+                        setPreviewOfflineUrl({ url, fileName: doc.fileName, type: doc.fileBlob.type });
+                      }}
+                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors"
+                    >
+                      <Eye size={13} /> Preview
+                    </button>
+                  )}
+                  {doc.status === 'failed' && navigator.onLine && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await offlineQueue.updateStatus(doc.id, 'pending');
+                        await retryAll();
+                        loadOfflineDocs();
+                      }}
+                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await offlineQueue.remove(doc.id);
+                      await refreshCount();
+                      loadOfflineDocs();
+                      toast.success('Draft removed from browser');
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Remove from offline queue"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -127,9 +264,24 @@ export default function DocumentsPage() {
             />
           </div>
 
-          {(search || docTypeFilter) && (
+          <input 
+            type="date" 
+            value={startDate} 
+            onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            title="Start Date"
+          />
+          <input 
+            type="date" 
+            value={endDate} 
+            onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            title="End Date"
+          />
+
+          {(search || docTypeFilter || startDate || endDate) && (
             <button
-              onClick={() => { setSearch(''); setDocTypeFilter(''); setPage(1); }}
+              onClick={() => { setSearch(''); setDocTypeFilter(''); setStartDate(''); setEndDate(''); setPage(1); }}
               className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
               Clear Filters
@@ -264,6 +416,35 @@ export default function DocumentsPage() {
           open={!!selectedDocId} 
           onClose={() => setSelectedDocId(null)} 
         />
+      )}
+
+      {previewOfflineUrl && (
+        <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="px-5 py-3.5 bg-gray-900 text-white flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-2 truncate">
+                <FileText size={18} className="text-amber-400" />
+                <span className="font-bold text-sm truncate">{previewOfflineUrl.fileName} (Offline Preview)</span>
+              </div>
+              <button
+                onClick={() => {
+                  URL.revokeObjectURL(previewOfflineUrl.url);
+                  setPreviewOfflineUrl(null);
+                }}
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 bg-gray-100 flex items-center justify-center min-h-[400px]">
+              {previewOfflineUrl.type === 'application/pdf' || previewOfflineUrl.fileName?.endsWith('.pdf') ? (
+                <iframe src={previewOfflineUrl.url} className="w-full h-[70vh] rounded border border-gray-300 bg-white" title="PDF Preview" />
+              ) : (
+                <img src={previewOfflineUrl.url} alt="Preview" className="max-w-full max-h-[70vh] object-contain rounded shadow" />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

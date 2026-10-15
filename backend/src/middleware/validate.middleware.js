@@ -27,6 +27,11 @@ const schemas = {
     password: Joi.string().required(),
   }),
 
+  changePassword: Joi.object({
+    currentPassword: Joi.string().required(),
+    newPassword: Joi.string().min(6).required(),
+  }),
+
   createPatient: Joi.object({
     uhid: Joi.string().pattern(/^([A-Z0-9]{11}|[A-Z0-9]{16})$/).uppercase().required().messages({
       'string.pattern.base': 'UHID must be exactly 11 or 16 alphanumeric characters',

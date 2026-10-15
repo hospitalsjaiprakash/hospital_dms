@@ -18,6 +18,7 @@ const ACTIONS = {
   USER_UPDATE: 'user_update',
   USER_DEACTIVATE: 'user_deactivate',
   PATIENT_DELETE: 'patient_delete',
+  PASSWORD_CHANGE: 'password_change',
 };
 
 /**
@@ -68,7 +69,7 @@ const auditLog = (action, entityType) => {
   };
 };
 
-const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit, requesterRole, requesterId, patientActivityOnly }) => {
+const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit, requesterRole, requesterId, patientActivityOnly, startDate, endDate }) => {
   let conditions = [];
   let params = [];
   let idx = 1;
@@ -77,6 +78,8 @@ const getAuditLogs = async ({ entityType, entityId, userId, action, page, limit,
   if (entityId) { conditions.push(`al.entity_id = $${idx++}`); params.push(entityId); }
   if (userId) { conditions.push(`al.user_id = $${idx++}`); params.push(userId); }
   if (action) { conditions.push(`al.action = $${idx++}`); params.push(action); }
+  if (startDate) { conditions.push(`al.created_at >= $${idx++}`); params.push(startDate); }
+  if (endDate) { conditions.push(`al.created_at <= $${idx++}`); params.push(endDate + ' 23:59:59'); }
 
   if (patientActivityOnly && requesterRole !== 'admin') {
     // Legacy: keep for backward compat

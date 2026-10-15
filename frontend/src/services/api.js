@@ -33,8 +33,8 @@ const api = axios.create({
 // Request interceptor - attach token
 api.interceptors.request.use(
   (config) => {
-    // Check sessionStorage (tab-specific)
-    const token = sessionStorage.getItem('hms_token');
+    // Check localStorage
+    const token = localStorage.getItem('hms_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
@@ -45,9 +45,18 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    // Check if it's a network/timeout error
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      return Promise.reject(new Error('Connection timed out. Please check your internet connection and try again.'));
+    }
+    
+    if (!error.response) {
+      return Promise.reject(new Error('Network Error: Please check your internet connection.'));
+    }
+
     if (error.response?.status === 401) {
-      sessionStorage.removeItem('hms_token');
-      sessionStorage.removeItem('hms_user');
+      localStorage.removeItem('hms_token');
+      localStorage.removeItem('hms_user');
       // Completely removed redirect here just in case it's causing a refresh loop
     }
     
@@ -57,16 +66,22 @@ api.interceptors.response.use(
       return Promise.reject(new Error(`${error.response.data.message}: ${details}`));
     }
 
-    const message = error.response?.data?.message || 'An error occurred';
+    // Check for 5xx server errors
+    if (error.response?.status >= 500) {
+      return Promise.reject(new Error('Server is currently unreachable or experiencing issues. Please check your internet connection and try again.'));
+    }
+
+    const message = error.response?.data?.message || 'An error occurred. Please check your network connection.';
     return Promise.reject(new Error(message));
   }
 );
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (data) => api.post('/auth/login', data),
-  signup: (data) => api.post('/auth/signup', data),
-  getMe: () => api.get('/auth/me'),
+  login: (data) => api.post('/auth/login', data, { timeout: 15000 }),
+  signup: (data) => api.post('/auth/signup', data, { timeout: 15000 }),
+  getMe: () => api.get('/auth/me', { timeout: 15000 }),
+  changePassword: (data) => api.post('/auth/change-password', data),
 };
 
 // ── Patients ──────────────────────────────────────────────────────────────────

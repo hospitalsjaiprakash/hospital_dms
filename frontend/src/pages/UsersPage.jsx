@@ -99,7 +99,7 @@ function UserDetailsModal({ user, open, onClose, currentUser, onDelete }) {
   const { mutate: unlockUser, isLoading: isUnlocking } = useMutation(userApi.unlock, {
     onSuccess: () => {
       queryClient.invalidateQueries('users');
-      toast.success('User account unlocked successfully!');
+      toast.success('Login attempt counter reset successfully!');
       onClose();
     },
     onError: (err) => toast.error(err.message),
@@ -138,31 +138,24 @@ function UserDetailsModal({ user, open, onClose, currentUser, onDelete }) {
               )}
             </div>
           )}
-          {(user.login_attempts > 0 || (user.locked_until && new Date(user.locked_until) > new Date())) && (
-            <div className="col-span-2 bg-red-50 border border-red-100 rounded-lg p-3">
+          {user.login_attempts > 0 && (
+            <div className="col-span-2 bg-orange-50 border border-orange-100 rounded-lg p-3">
               <div className="flex justify-between items-center gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs text-red-700 font-bold uppercase tracking-wider">Account Security</p>
-                  {user.locked_until && new Date(user.locked_until) > new Date() ? (
-                    <p className="text-xs text-red-600 mt-0.5 font-medium">
-                      Account is locked. Try again in{' '}
-                      {Math.ceil((new Date(user.locked_until) - new Date()) / 60000)} minute(s).
-                    </p>
-                  ) : (
-                    <p className="text-xs text-orange-600 mt-0.5 font-medium">
-                      Suspicious activity: {user.login_attempts} failed login attempt(s).
-                    </p>
-                  )}
+                  <p className="text-xs text-orange-700 font-bold uppercase tracking-wider">Failed Login Activity</p>
+                  <p className="text-xs text-orange-600 mt-0.5 font-medium">
+                    {user.login_attempts} failed login attempt(s) since last successful sign in.
+                  </p>
                 </div>
                 {['admin', 'hod'].includes(currentUser?.role) && (
                   <Button
                     size="sm"
-                    variant="danger"
+                    variant="secondary"
                     loading={isUnlocking}
                     onClick={() => unlockUser(user.id)}
                     className="!py-1.5 !px-3 text-xs flex-shrink-0"
                   >
-                    Unlock Account
+                    Reset Count
                   </Button>
                 )}
               </div>

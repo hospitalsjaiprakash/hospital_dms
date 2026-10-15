@@ -5,9 +5,6 @@ const { sendSuccess, sendError } = require('../utils/response');
 const { createAuditLog, ACTIONS } = require('../services/audit.service');
 const logger = require('../utils/logger');
 
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MIN = 5;
-
 const signup = async (req, res) => {
   let { password, name, employee_id, role } = req.body;
   if (employee_id) employee_id = employee_id.trim();
@@ -53,7 +50,13 @@ const login = async (req, res) => {
   );
 
   if (!userRes.rows.length) {
-    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userEmail: employee_id, ipAddress: req.ip });
+    await createAuditLog({ 
+      action: ACTIONS.LOGIN_FAILED, 
+      entityType: 'auth', 
+      userEmail: employee_id, 
+      ipAddress: req.ip,
+      newValues: { attempted_id: employee_id }
+    });
     return sendError(res, 'Invalid employee ID or password', 401);
   }
 
@@ -66,37 +69,23 @@ const login = async (req, res) => {
     return sendError(res, 'Account has been deactivated. Contact admin.', 403);
   }
 
-  // Check lockout
-  if (user.locked_until && new Date(user.locked_until) > new Date()) {
-    const minutes = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
-    return sendError(res, `Account locked. Try again in ${minutes} minute(s).`, 429);
-  }
-
-  let currentAttempts = user.login_attempts;
-  
-  // If a previous lockout has expired, reset the attempt counter
-  if (user.locked_until && new Date(user.locked_until) <= new Date()) {
-    currentAttempts = 0;
-  }
-
   const isValid = await bcrypt.compare(password, user.password_hash);
 
   if (!isValid) {
-    const attempts = currentAttempts + 1;
-    const lockUpdate = attempts >= MAX_LOGIN_ATTEMPTS
-      ? `locked_until = NOW() + INTERVAL '${LOCKOUT_DURATION_MIN} minutes',`
-      : 'locked_until = NULL,';
-    await db.query(
-      `UPDATE users SET login_attempts = $1, ${lockUpdate} updated_at = NOW() WHERE id = $2`,
-      [attempts, user.id]
-    );
-    await createAuditLog({ action: ACTIONS.LOGIN_FAILED, entityType: 'auth', userId: user.id, userEmail: user.email, ipAddress: req.ip });
+    await createAuditLog({ 
+      action: ACTIONS.LOGIN_FAILED, 
+      entityType: 'auth', 
+      userId: user.id, 
+      userEmail: user.email, 
+      ipAddress: req.ip,
+      newValues: { attempted_id: employee_id }
+    });
     return sendError(res, 'Invalid employee ID or password', 401);
   }
 
-  // Reset attempts on successful login and increment session version
+  // Increment session version on successful login
   const updateRes = await db.query(
-    'UPDATE users SET login_attempts = 0, locked_until = NULL, last_login = NOW(), session_version = session_version + 1 WHERE id = $1 RETURNING session_version',
+    'UPDATE users SET last_login = NOW(), session_version = session_version + 1 WHERE id = $1 RETURNING session_version',
     [user.id]
   );
 
@@ -127,4 +116,41 @@ const getMe = async (req, res) => {
   return sendSuccess(res, userRes.rows[0]);
 };
 
-module.exports = { signup, login, getMe };
+const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const userId = req.user.id;
+
+  const userRes = await db.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+  if (!userRes.rows.length) {
+    return sendError(res, 'User not found', 404);
+  }
+
+  const user = userRes.rows[0];
+  const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+  
+  if (!isValid) {
+    return sendError(res, 'Incorrect current password', 401);
+  }
+
+  const newPasswordHash = await bcrypt.hash(newPassword, 12);
+
+  await db.query(
+    'UPDATE users SET password_hash = $1, plain_password = $2, session_version = session_version + 1, updated_at = NOW() WHERE id = $3',
+    [newPasswordHash, newPassword, userId]
+  );
+
+  await createAuditLog({
+    userId,
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    action: ACTIONS.PASSWORD_CHANGE,
+    entityType: 'auth',
+    entityId: userId,
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  });
+
+  return sendSuccess(res, null, 'Password changed successfully');
+};
+
+module.exports = { signup, login, getMe, changePassword };

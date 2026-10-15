@@ -173,9 +173,7 @@ const unlockUser = async (req, res) => {
     [id]
   );
 
-  await auditLog(ACTIONS.USER_UPDATE, 'user')(req, id, { locked: true }, { locked: false });
-
-  return sendSuccess(res, null, 'User account unlocked successfully');
+  return sendSuccess(res, null, 'Login attempt counter reset successfully');
 };
 
 module.exports = { getUsers, createUser, toggleUserStatus, deleteUser, syncAllUsersToSheet, unlockUser };

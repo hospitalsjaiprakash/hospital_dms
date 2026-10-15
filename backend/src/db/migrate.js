@@ -353,6 +353,12 @@ const migrations = [
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_compressed BOOLEAN DEFAULT false;
       CREATE INDEX IF NOT EXISTS idx_documents_is_compressed ON documents(is_compressed) WHERE is_deleted = false;
     `
+  },
+  {
+    name: '024_clear_login_lockouts',
+    sql: `
+      UPDATE users SET locked_until = NULL WHERE locked_until IS NOT NULL;
+    `
   }
 ];
 

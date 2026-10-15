@@ -6,17 +6,16 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      // Only read from sessionStorage (tab-specific)
-      // This ensures new tabs show login, not previous user's dashboard
-      const stored = sessionStorage.getItem('hms_user');
+      // Read from localStorage for offline persistence
+      const stored = localStorage.getItem('hms_user');
       return stored ? JSON.parse(stored) : null;
     } catch { return null; }
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check sessionStorage first (same tab session)
-    const token = sessionStorage.getItem('hms_token');
+    // Check localStorage first
+    const token = localStorage.getItem('hms_token');
     
     if (token) {
       authApi.getMe()
@@ -24,12 +23,18 @@ export function AuthProvider({ children }) {
           const userData = res?.data || res;
           if (userData && userData.id) {
             setUser(userData);
-            sessionStorage.setItem('hms_user', JSON.stringify(userData));
+            localStorage.setItem('hms_user', JSON.stringify(userData));
           } else {
             logout();
           }
         })
-        .catch(() => { logout(); })
+        .catch((error) => {
+          if (!error.response || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+            console.warn('Network error: keeping offline session');
+          } else {
+            logout();
+          }
+        })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
@@ -46,9 +51,9 @@ export function AuthProvider({ children }) {
     
     const { user, token } = payload;
     
-    // Store in sessionStorage (tab-specific)
-    if (token) sessionStorage.setItem('hms_token', token);
-    sessionStorage.setItem('hms_user', JSON.stringify(user));
+    // Store in localStorage for offline persistence
+    if (token) localStorage.setItem('hms_token', token);
+    localStorage.setItem('hms_user', JSON.stringify(user));
     setUser(user);
     return user;
   }, []);
@@ -59,8 +64,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
-    sessionStorage.removeItem('hms_token');
-    sessionStorage.removeItem('hms_user');
+    localStorage.removeItem('hms_token');
+    localStorage.removeItem('hms_user');
     setUser(null);
   }, []);
 

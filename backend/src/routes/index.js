@@ -35,6 +35,7 @@ const upload = multer({
 router.post('/auth/signup', validate(schemas.signup), authCtrl.signup);
 router.post('/auth/login', validate(schemas.login), authCtrl.login);
 router.get('/auth/me', authenticate, authCtrl.getMe);
+router.post('/auth/change-password', authenticate, validate(schemas.changePassword), authCtrl.changePassword);
 
 // ── Patients ─────────────────────────────────────────────────────────────────
 router.get('/patients/stats', authenticate, patientCtrl.getPatientStats);

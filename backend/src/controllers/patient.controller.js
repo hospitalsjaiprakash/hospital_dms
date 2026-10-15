@@ -203,13 +203,31 @@ const updatePatient = async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
 
-  // PCC and Nursing have limited update access
-  if (['pcc', 'nursing'].includes(req.user.role)) {
+  // Nursing has limited update access
+  if (req.user.role === 'nursing') {
     const allowedFields = ['name', 'uhid', 'ip_number', 'admission_date', 'notes'];
     const requestedFields = Object.keys(updates);
     const disallowed = requestedFields.filter(f => !allowedFields.includes(f));
     if (disallowed.length) {
-      return sendError(res, `${req.user.role.toUpperCase()} cannot update: ${disallowed.join(', ')}`, 403);
+      return sendError(res, `NURSING cannot update: ${disallowed.join(', ')}`, 403);
+    }
+  }
+
+  // PCC can update basic details and discharge the patient, but cannot update document submission, PMJAY pending, or payment settlement
+  if (req.user.role === 'pcc') {
+    if (
+      (updates.settlement_status && updates.settlement_status !== 'none') ||
+      updates.document_submission_date ||
+      updates.pending_date ||
+      updates.settlement_date
+    ) {
+      return sendError(res, 'PCC cannot perform document submission, PMJAY pending, or payment settlement updates', 403);
+    }
+    const allowedFields = ['name', 'uhid', 'ip_number', 'admission_date', 'notes', 'hospital_status', 'discharge_date', 'settlement_status'];
+    const requestedFields = Object.keys(updates);
+    const disallowed = requestedFields.filter(f => !allowedFields.includes(f));
+    if (disallowed.length) {
+      return sendError(res, `PCC cannot update: ${disallowed.join(', ')}`, 403);
     }
   }
 
@@ -280,8 +298,22 @@ const bulkUpdatePatients = async (req, res) => {
   const { patientIds, hospital_status, settlement_status, discharge_date, settlement_date, pending_date, document_submission_date } = req.body;
   const now = new Date().toISOString();
 
+  if (req.user.role === 'nursing') {
+    return sendError(res, 'Nursing cannot perform bulk updates', 403);
+  }
+
   if (req.user.role === 'pcc') {
-    return sendError(res, 'PCC cannot perform bulk updates', 403);
+    if (
+      (settlement_status && settlement_status !== 'none') ||
+      document_submission_date ||
+      pending_date ||
+      settlement_date
+    ) {
+      return sendError(res, 'PCC can only perform bulk patient discharge and cannot perform document submission, PMJAY pending, or payment settlement updates', 403);
+    }
+    if (hospital_status && hospital_status !== 'discharged' && hospital_status !== 'active') {
+      return sendError(res, 'Invalid hospital status for PCC bulk update', 403);
+    }
   }
 
   try {

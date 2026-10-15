@@ -1033,23 +1033,33 @@ export default function DocumentScanner({ onComplete, onClose, initialPages = []
 
       // Binarized pages compress so well that we can afford a higher
       // max dimension at a lower JPEG quality than color/grayscale mode.
-      const qualityLevels = binarize
+      let qualityLevels = binarize
         ? [
-            { qual: 0.5, dim: 1800 },
-            { qual: 0.4, dim: 1500 },
-            { qual: 0.3, dim: 1200 },
-            { qual: 0.25, dim: 1000 },
+            { qual: 0.5, dim: 1800, maxPages: 4 },
+            { qual: 0.4, dim: 1500, maxPages: 7 },
+            { qual: 0.3, dim: 1200, maxPages: 12 },
+            { qual: 0.25, dim: 1000, maxPages: 18 },
+            { qual: 0.2, dim: 800, maxPages: 30 },
+            { qual: 0.15, dim: 600, maxPages: 50 },
+            { qual: 0.1, dim: 400, maxPages: 100 },
+            { qual: 0.05, dim: 250, maxPages: 999 },
           ]
         : [
-            { qual: 0.85, dim: 1600 },
-            { qual: 0.70, dim: 1200 },
-            { qual: 0.55, dim: 1000 },
-            { qual: 0.40, dim: 800 },
-            { qual: 0.30, dim: 600 },
+            { qual: 0.85, dim: 1600, maxPages: 2 },
+            { qual: 0.70, dim: 1200, maxPages: 4 },
+            { qual: 0.55, dim: 1000, maxPages: 7 },
+            { qual: 0.40, dim: 800, maxPages: 12 },
+            { qual: 0.30, dim: 600, maxPages: 20 },
+            { qual: 0.20, dim: 400, maxPages: 40 },
+            { qual: 0.10, dim: 250, maxPages: 999 },
           ];
 
+      // To prevent taking minutes to generate PDFs for large documents, we skip high-quality
+      // levels that have absolutely no chance of keeping the final PDF under 1MB.
+      qualityLevels = qualityLevels.filter(level => pages.length <= level.maxPages || level === qualityLevels[qualityLevels.length - 1]);
+
       let pdfBlob = null;
-      const targetMax = 0.95 * 1024 * 1024;
+      const targetMax = 0.95 * 1024 * 1024; // Strictly enforce ~1MB limit
 
       for (let levelIndex = 0; levelIndex < qualityLevels.length; levelIndex++) {
         const { qual, dim } = qualityLevels[levelIndex];
@@ -1542,7 +1552,7 @@ export default function DocumentScanner({ onComplete, onClose, initialPages = []
           disabled={pages.length === 0}
           className="w-full py-4 rounded-2xl"
         >
-          Generate PDF &amp; Upload <ArrowRight size={18} className="ml-2" />
+          {isProcessing ? 'Processing Document...' : <><span className="mr-1">Generate PDF &amp; Upload</span> <ArrowRight size={18} /></>}
         </Button>
       </div>
 

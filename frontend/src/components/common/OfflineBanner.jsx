@@ -1,5 +1,6 @@
 import React from 'react';
-import { WifiOff, Upload, RefreshCw, CheckCircle } from 'lucide-react';
+import { WifiOff, Upload, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 /**
  * OfflineBanner
@@ -59,21 +60,30 @@ export default function OfflineBanner({ isOnline, queueCount, isSyncing, retryAl
             </span>
           </div>
 
-          {!isSyncing && isOnline && (
-            <button
-              onClick={retryAll}
-              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white font-bold text-xs px-3 py-1.5 rounded-full flex-shrink-0 transition-colors border border-white/30"
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              to="/documents"
+              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-1.5 rounded-full transition-colors border border-white/20"
             >
-              <RefreshCw size={11} />
-              Retry Now
-            </button>
-          )}
+              View Drafts ({queueCount})
+            </Link>
 
-          {!isSyncing && !isOnline && (
-            <span className="text-amber-100 text-xs font-medium flex-shrink-0">
-              Will sync on reconnect
-            </span>
-          )}
+            {!isSyncing && isOnline && (
+              <button
+                onClick={retryAll}
+                className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white font-bold text-xs px-3 py-1.5 rounded-full flex-shrink-0 transition-colors border border-white/30"
+              >
+                <RefreshCw size={11} />
+                Retry Now
+              </button>
+            )}
+
+            {!isSyncing && !isOnline && (
+              <span className="text-amber-100 text-xs font-medium flex-shrink-0">
+                Will sync on reconnect
+              </span>
+            )}
+          </div>
 
           {isSyncing && (
             <span className="text-amber-100 text-xs font-medium flex-shrink-0 flex items-center gap-1">

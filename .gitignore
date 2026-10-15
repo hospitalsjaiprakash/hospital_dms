@@ -9,3 +9,5 @@ build/
 .env.local
 .env.production
 coverage/
+backend/test.js
+

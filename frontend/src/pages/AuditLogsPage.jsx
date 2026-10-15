@@ -23,6 +23,7 @@ const ACTION_META = {
   export_zip: { icon: Download, color: 'purple', label: 'ZIP Export' },
   user_create: { icon: UserPlus, color: 'green', label: 'User Created' },
   user_update: { icon: Edit2, color: 'amber', label: 'User Updated' },
+  password_change: { icon: Edit2, color: 'blue', label: 'Password Changed' },
 };
 
 const ROLE_COLORS = { admin: 'red', hod: 'purple', pcc: 'blue', nursing: 'green' };
@@ -36,6 +37,8 @@ export default function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState('');
   const [entityFilter, setEntityFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [selectedDocId, setSelectedDocId] = useState(null);
 
   const { data, isLoading } = useQuery(
@@ -45,6 +48,8 @@ export default function AuditLogsPage() {
       action: actionFilter || undefined,
       entity_type: entityFilter || undefined,
       user_id: isMyActivity ? user?.id : undefined,
+      start_date: startDate || undefined,
+      end_date: endDate || undefined,
     }),
     { keepPreviousData: true }
   );
@@ -83,9 +88,25 @@ export default function AuditLogsPage() {
             <option value="user">User</option>
           </select>
 
-          {(actionFilter || entityFilter) && (
+          <input 
+            type="date" 
+            value={startDate} 
+            onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-500 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            title="Start Date"
+          />
+          
+          <input 
+            type="date" 
+            value={endDate} 
+            onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+            className="w-full sm:w-auto rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-500 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            title="End Date"
+          />
+
+          {(actionFilter || entityFilter || startDate || endDate) && (
             <button
-              onClick={() => { setActionFilter(''); setEntityFilter(''); setPage(1); }}
+              onClick={() => { setActionFilter(''); setEntityFilter(''); setStartDate(''); setEndDate(''); setPage(1); }}
               className="w-full sm:w-auto px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Clear filters
@@ -150,7 +171,11 @@ export default function AuditLogsPage() {
                     {/* User */}
                     <div className="sm:col-span-3 flex-1 sm:flex-none min-w-0 ml-3 sm:ml-0">
                       <p className="text-sm font-medium text-gray-800 truncate">
-                        {log.user_name || log.user_email || 'System'}
+                        {log.user_name 
+                          ? log.user_name 
+                          : (log.action === 'login_failed' && !log.user_id 
+                              ? `Unknown ID: ${log.user_email}` 
+                              : log.user_email || 'System')}
                       </p>
                       {log.user_role && (
                         <Badge variant={ROLE_COLORS[log.user_role] || 'gray'} size="xs">{log.user_role}</Badge>
@@ -189,6 +214,17 @@ export default function AuditLogsPage() {
                         <span className="text-xs font-medium text-gray-700 truncate max-w-full" title="Patient created/updated">
                           {log.action === 'patient_create' ? 'Added new patient' : 'Updated patient'} {log.patient_name || log.new_values?.name || 'unknown'} ({log.uhid || log.new_values?.uhid || 'ID unknown'})
                         </span>
+                      ) : log.entity_type === 'user' && log.action === 'password_change' ? (
+                        <span className="text-xs font-medium text-gray-700 truncate max-w-full" title="User changed password">
+                          User changed their password
+                        </span>
+                      ) : log.action === 'login_failed' && log.new_values ? (
+                        <div className="flex flex-col min-w-0 w-full">
+                          <span className="text-xs font-semibold text-red-600 truncate">Failed attempt</span>
+                          <span className="text-[10px] text-gray-500 truncate">
+                            ID: {log.new_values.attempted_id}
+                          </span>
+                        </div>
                       ) : log.new_values ? (
                         <span className="text-xs text-gray-500 truncate max-w-full">
                           {typeof log.new_values === 'object'

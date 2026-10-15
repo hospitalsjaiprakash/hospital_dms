@@ -3,10 +3,11 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, Users, FileText, LogOut, Menu, X,
-  ChevronRight, ClipboardList, Shield, Hospital
+  ChevronRight, ClipboardList, Shield, Hospital, KeyRound
 } from 'lucide-react';
 import clsx from 'clsx';
 import logo from '../../assets/logo.webp';
+import ChangePasswordModal from '../common/ChangePasswordModal';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'hod', 'pcc', 'nursing'] },
@@ -27,6 +28,7 @@ const roleColors = {
 export default function Layout() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -90,6 +92,13 @@ export default function Layout() {
               {user?.role}
             </span>
           </div>
+          <button
+            onClick={() => setPasswordModalOpen(true)}
+            className="p-1.5 hover:bg-blue-600 rounded-md transition-colors text-blue-200 hover:text-white"
+            title="Change Password"
+          >
+            <KeyRound size={15} />
+          </button>
           <button
             onClick={handleLogout}
             className="p-1.5 hover:bg-blue-600 rounded-md transition-colors text-blue-200 hover:text-white"
@@ -155,6 +164,13 @@ export default function Layout() {
               {user?.role}
             </span>
             <button
+              onClick={() => setPasswordModalOpen(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Change Password"
+            >
+              <KeyRound size={17} />
+            </button>
+            <button
               onClick={handleLogout}
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
               title="Logout"
@@ -201,6 +217,11 @@ export default function Layout() {
           ))}
         </nav>
       </div>
+
+      <ChangePasswordModal 
+        isOpen={passwordModalOpen} 
+        onClose={() => setPasswordModalOpen(false)} 
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ const archiver = require('archiver');
 const https = require('https');
 const sharp = require('sharp');
 const { compressPDFToTarget } = require('../services/pdf.service');
+const { PDFDocument } = require('pdf-lib');
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'image/webp'];
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB for images
@@ -72,7 +73,14 @@ const compressDocumentAsync = async (documentId, originalBuffer, mimeType, s3Key
           isCompressed: 'true',
         });
 
-        // Delete the original uncompressed file from S3
+        // Update document record with compressed version FIRST
+        const updateResult = await db.query(
+          `UPDATE documents SET file_url = $1, s3_key = $2, file_size = $3, is_compressed = true, updated_at = NOW()
+           WHERE id = $4 RETURNING *`,
+          [compressedUrl, compressedS3Key, compressedBuffer.length, documentId]
+        );
+
+        // ONLY delete the original uncompressed file from S3 if DB update succeeds
         try {
           console.log(`[ASYNC COMPRESS] Deleting original file from S3: ${s3Key}`);
           await deleteFromS3(s3Key);
@@ -80,13 +88,6 @@ const compressDocumentAsync = async (documentId, originalBuffer, mimeType, s3Key
         } catch (delErr) {
           console.warn(`[ASYNC COMPRESS] Failed to delete original file ${s3Key}:`, delErr.message);
         }
-
-        // Update document record with compressed version
-        const updateResult = await db.query(
-          `UPDATE documents SET file_url = $1, s3_key = $2, file_size = $3, is_compressed = true, updated_at = NOW()
-           WHERE id = $4 RETURNING *`,
-          [compressedUrl, compressedS3Key, compressedBuffer.length, documentId]
-        );
 
         console.log(`[ASYNC COMPRESS COMPLETE] Document ${documentId} updated: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(compressedBuffer.length / 1024 / 1024).toFixed(2)}MB (original file deleted)`);
       } catch (err) {
@@ -142,6 +143,18 @@ const uploadDocument = async (req, res) => {
   // Validate mime type
   if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
     return sendError(res, 'Only JPG, PNG, and PDF files are allowed', 400);
+  }
+
+  if (req.file.mimetype === 'application/pdf') {
+    try {
+      const pdfDoc = await PDFDocument.load(req.file.buffer, { ignoreEncryption: true });
+      const pageCount = pdfDoc.getPageCount();
+      if (pageCount > 20) {
+        return sendError(res, `PDF exceeds the maximum limit of 20 pages (Found ${pageCount} pages).`, 400);
+      }
+    } catch (err) {
+      console.warn('Failed to parse PDF for page count:', err.message);
+    }
   }
 
   // Check patient exists and is not settlement-completed
@@ -254,7 +267,7 @@ const getPatientDocuments = async (req, res) => {
                up_u.name as updated_by_name, up_u.role as updated_by_role,
                p.uhid as patient_uhid
        FROM documents d
-       JOIN users u ON u.id = d.uploaded_by
+       LEFT JOIN users u ON u.id = d.uploaded_by
        LEFT JOIN users up_u ON up_u.id = d.updated_by
        LEFT JOIN patients p ON p.id = d.patient_id
        ${where}
@@ -287,7 +300,7 @@ const getDocument = async (req, res) => {
             up_u.name as updated_by_name, up_u.role as updated_by_role,
             p.uhid as patient_uhid
      FROM documents d
-     JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN users u ON u.id = d.uploaded_by
      LEFT JOIN users up_u ON up_u.id = d.updated_by
      LEFT JOIN patients p ON p.id = d.patient_id
      WHERE d.id = $1`,
@@ -313,8 +326,8 @@ const updateDocument = async (req, res) => {
 
   const docRes = await db.query(
     `SELECT d.*, u.role as uploader_role, p.uhid as patient_uhid, p.name as patient_name FROM documents d
-     JOIN users u ON u.id = d.uploaded_by
-     JOIN patients p ON p.id = d.patient_id
+     LEFT JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN patients p ON p.id = d.patient_id
      WHERE d.id = $1 AND d.is_deleted = false`,
     [id]
   );
@@ -337,6 +350,18 @@ const updateDocument = async (req, res) => {
   if (req.file) {
     if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
       return sendError(res, 'Only JPG, PNG, and PDF files are allowed', 400);
+    }
+    
+    if (req.file.mimetype === 'application/pdf') {
+      try {
+        const pdfDoc = await PDFDocument.load(req.file.buffer, { ignoreEncryption: true });
+        const pageCount = pdfDoc.getPageCount();
+        if (pageCount > 20) {
+          return sendError(res, `PDF exceeds the maximum limit of 20 pages (Found ${pageCount} pages).`, 400);
+        }
+      } catch (err) {
+        console.warn('Failed to parse PDF for page count:', err.message);
+      }
     }
     
     let fileBuffer = req.file.buffer;
@@ -422,7 +447,7 @@ const deleteDocument = async (req, res) => {
 
   const docRes = await db.query(
     `SELECT d.*, u.role as uploader_role FROM documents d
-     JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN users u ON u.id = d.uploaded_by
      WHERE d.id = $1 AND d.is_deleted = false`,
     [id]
   );
@@ -460,7 +485,7 @@ const exportPatientDocuments = async (req, res) => {
 
   const docsRes = await db.query(
     `SELECT d.*, u.name as uploaded_by_name FROM documents d
-     JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN users u ON u.id = d.uploaded_by
      WHERE d.patient_id = $1 AND d.is_deleted = false
      ORDER BY d.doc_type, d.created_at`,
     [patient_id]
@@ -510,7 +535,7 @@ const exportPatientDocuments = async (req, res) => {
  */
 const getAllDocuments = async (req, res) => {
   const { page, limit, offset } = getPaginationParams(req.query);
-  const { today, doc_type, search } = req.query;
+  const { today, doc_type, search, start_date, end_date } = req.query;
 
   const conditions = [`d.is_deleted = false`];
   const params = [];
@@ -518,6 +543,14 @@ const getAllDocuments = async (req, res) => {
 
   if (today === 'true') {
     conditions.push(`d.created_at >= CURRENT_DATE`);
+  }
+  if (start_date) {
+    conditions.push(`d.created_at >= $${idx++}`);
+    params.push(start_date);
+  }
+  if (end_date) {
+    conditions.push(`d.created_at <= $${idx++}`);
+    params.push(end_date + ' 23:59:59');
   }
   
   if (doc_type) {
@@ -545,8 +578,8 @@ const getAllDocuments = async (req, res) => {
                u.name as uploaded_by_name, u.role as uploader_role,
                up_u.name as updated_by_name, up_u.role as updated_by_role
        FROM documents d
-       JOIN patients p ON p.id = d.patient_id
-       JOIN users u ON u.id = d.uploaded_by
+       LEFT JOIN patients p ON p.id = d.patient_id
+       LEFT JOIN users u ON u.id = d.uploaded_by
        LEFT JOIN users up_u ON up_u.id = d.updated_by
        ${where}
        ORDER BY d.created_at DESC
@@ -577,7 +610,7 @@ const bulkDeleteDocuments = async (req, res) => {
 
   const results = await db.query(
     `SELECT d.*, u.role as uploader_role FROM documents d
-     JOIN users u ON u.id = d.uploaded_by
+     LEFT JOIN users u ON u.id = d.uploaded_by
      WHERE d.id = ANY($1) AND d.is_deleted = false`,
     [ids]
   );
