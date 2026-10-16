@@ -120,12 +120,12 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const startCamera = async () => {
     setVideoReady(false);
     try {
-      // Try with environment camera and specific resolution, fall back to any camera
+      // High-resolution camera request (1080p Full HD ideal, up to 2K capable)
       const constraints = {
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 1920, max: 2560 },
+          height: { ideal: 1080, max: 1440 },
         },
         audio: false,
       };
@@ -134,9 +134,12 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err) {
-        // Only fallback if it's a constraint error, not a permission error
+        // Fallback to standard resolution if high constraints fail on older devices
         if (err.name === 'OverconstrainedError') {
-          mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
         } else {
           throw err;
         }
@@ -148,9 +151,20 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       const track = mediaStream.getVideoTracks()[0];
       if (track) {
         try {
-          const capabilities = track.getCapabilities();
+          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
           if (capabilities.torch) {
             setHasTorch(true);
+          }
+          // Request continuous focus and auto exposure if supported for sharper captures
+          const advanced = [];
+          if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            advanced.push({ focusMode: 'continuous' });
+          }
+          if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+            advanced.push({ exposureMode: 'continuous' });
+          }
+          if (advanced.length > 0) {
+            await track.applyConstraints({ advanced }).catch(() => {});
           }
         } catch (e) {
           // getCapabilities might not be supported
@@ -217,87 +231,119 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
       canvas.width = videoEl.videoWidth;
       canvas.height = videoEl.videoHeight;
       const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(videoEl, 0, 0);
 
-      // Draw sophisticated GPS Tag Overlay
-      const scale = canvas.width / 1000;
-      const cardHeight = 240 * scale;
-      const cardPadding = 20 * scale;
+      // Orientation-independent scale factor based on minimum dimension
+      // This guarantees text remains large and clear in both Portrait & Landscape
+      const minDim = Math.min(canvas.width, canvas.height);
+      const scale = Math.max(minDim / 700, 1.25);
 
-      // Draw background card (semi-transparent dark)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      const cardPadding = Math.round(24 * scale);
+      const cardHeight = Math.round(290 * scale);
+
+      // High-opacity dark card background for optimal contrast against bright documents/backgrounds
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
       ctx.fillRect(0, canvas.height - cardHeight, canvas.width, cardHeight);
 
-      let textX = cardPadding;
+      // Top accent bar: vibrant medical blue
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(0, canvas.height - cardHeight, canvas.width, Math.max(3, Math.round(3.5 * scale)));
+
+      const textX = cardPadding;
+      const cardTop = canvas.height - cardHeight;
 
       const now = liveTime;
-      const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+      const dateStr = now.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
       const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
-      // Text drawing
-      ctx.fillStyle = 'white';
+      const fontSans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+      const fontMono = "'Roboto Mono', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace";
 
       // Line 0: Header Badge with Pin Icon
-      ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
+      ctx.font = `bold ${Math.round(18 * scale)}px ${fontSans}`;
       ctx.fillStyle = '#60a5fa'; // blue-400
-      ctx.fillText("📍 GPS PHOTO TAG", textX, canvas.height - cardHeight + cardPadding + (10 * scale));
+      ctx.fillText("📍 GPS VERIFIED PHOTO", textX, cardTop + cardPadding + Math.round(14 * scale));
 
-      // Line 1: Location Title (City, State)
-      ctx.fillStyle = 'white';
+      // Line 1: Location Title (City, State / Landmark)
+      ctx.fillStyle = '#ffffff';
       const cityState = "JPHRC, Dayanand Nagar";
-      ctx.font = `bold ${32 * scale}px Inter, sans-serif`;
-      ctx.fillText(cityState, textX, canvas.height - cardHeight + cardPadding + (45 * scale));
+      ctx.font = `bold ${Math.round(36 * scale)}px ${fontSans}`;
+      ctx.fillText(cityState, textX, cardTop + cardPadding + Math.round(52 * scale));
 
-      // Line 2: Full Address (Smaller, Multi-line if needed)
-      ctx.font = `${18 * scale}px Inter, sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      // Line 2: Full Address (Prominent, clean wrap)
+      ctx.font = `500 ${Math.round(20 * scale)}px ${fontSans}`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
       const fullAddress = "JPHRC, Dayanand Nagar, Dandiapali, Rourkela, Odisha 769004";
       const addressWords = fullAddress.split(' ');
       let line = '';
-      let currentY = canvas.height - cardHeight + cardPadding + (75 * scale);
+      let currentY = cardTop + cardPadding + Math.round(82 * scale);
+      const maxAddressWidth = canvas.width - (cardPadding * 2);
 
       for (let n = 0; n < addressWords.length; n++) {
         const testLine = line + addressWords[n] + ' ';
         const metrics = ctx.measureText(testLine);
-        if (metrics.width > (canvas.width - textX - cardPadding) && n > 0) {
-          ctx.fillText(line, textX, currentY);
+        if (metrics.width > maxAddressWidth && n > 0) {
+          ctx.fillText(line.trim(), textX, currentY);
           line = addressWords[n] + ' ';
-          currentY += 22 * scale;
+          currentY += Math.round(25 * scale);
         } else {
           line = testLine;
         }
-        if (currentY > canvas.height - 80 * scale) break; // Don't overlap bottom info
       }
-      ctx.fillText(line, textX, currentY);
+      ctx.fillText(line.trim(), textX, currentY);
 
-      // Line 3: Lat/Long Info
-      ctx.fillStyle = '#fcd34d'; // amber-300
-      ctx.font = `bold ${20 * scale}px Roboto Mono, monospace`;
+      // Line 3: Lat/Long Info (High-visibility monospaced Amber coordinates)
+      ctx.fillStyle = '#fde047'; // amber-300
+      ctx.font = `bold ${Math.round(24 * scale)}px ${fontMono}`;
       const latStr = effectiveGpsData ? effectiveGpsData.latitude.toFixed(6) : '--.------';
       const lonStr = effectiveGpsData ? effectiveGpsData.longitude.toFixed(6) : '--.------';
-      const coordStr = `LAT: ${latStr}°  |  LONG: ${lonStr}°`;
-      ctx.fillText(coordStr, textX, canvas.height - 45 * scale);
+      const coordStr = `LAT: ${latStr}°   |   LONG: ${lonStr}°`;
+      ctx.fillText(coordStr, textX, canvas.height - Math.round(48 * scale));
 
-      // Line 4: Hospital Name & Time
-      ctx.fillStyle = 'white';
-      ctx.font = `bold ${16 * scale}px Inter, sans-serif`;
-      ctx.fillText("JPHRC JAI PRAKASH HOSPITAL", textX, canvas.height - 20 * scale);
+      // Line 4: Hospital Name & Time (Bottom row)
+      ctx.fillStyle = '#93c5fd';
+      ctx.font = `bold ${Math.round(17 * scale)}px ${fontSans}`;
+      ctx.fillText("JAI PRAKASH HOSPITAL & RESEARCH CENTRE", textX, canvas.height - Math.round(18 * scale));
 
       ctx.textAlign = 'right';
-      ctx.font = `italic ${14 * scale}px Inter, sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillText(`${dateStr} • ${timeStr}`, canvas.width - cardPadding, canvas.height - 20 * scale);
+      ctx.font = `600 ${Math.round(16 * scale)}px ${fontMono}`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillText(`${dateStr} • ${timeStr}`, canvas.width - cardPadding, canvas.height - Math.round(18 * scale));
       ctx.textAlign = 'left'; // reset
 
+      // Strict limit: must be less than 1MB (1,048,576 bytes)
+      const TARGET_MAX_BYTES = 0.95 * 1024 * 1024; // ~996KB (guaranteed < 1MB)
+
+      // Export canvas directly with optimal JPEG quality (0.90)
       const blob = await new Promise((resolve, reject) =>
         canvas.toBlob(b => b ? resolve(b) : reject(new Error('Empty blob')), 'image/jpeg', 0.90)
       );
 
-      const rawFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      let finalFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
-      setCompressing(true);
-      const compressed = await imageCompression(rawFile, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
-      const newEntry = { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
+      // If the image already fits safely under 1MB, avoid double-compression generation loss!
+      if (finalFile.size > TARGET_MAX_BYTES) {
+        setCompressing(true);
+        finalFile = await imageCompression(finalFile, {
+          maxSizeMB: 0.92, // Target strictly under 1MB
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+          initialQuality: 0.85,
+        });
+
+        // Fail-safe check in case compression was marginally above 1MB
+        if (finalFile.size >= 1024 * 1024) {
+          finalFile = await imageCompression(finalFile, {
+            maxSizeMB: 0.85,
+            maxWidthOrHeight: 1600,
+            useWebWorker: true,
+          });
+        }
+      }
+
+      const newEntry = { file: finalFile, preview: URL.createObjectURL(finalFile), type: 'image' };
 
       setStagedPhoto(newEntry);
       setCompressing(false);
@@ -319,8 +365,26 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
   const processFile = async (f) => {
     if (f.type.startsWith('image/')) {
       try {
-        const compressed = await imageCompression(f, { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true });
-        return { file: compressed, preview: URL.createObjectURL(compressed), type: 'image' };
+        const TARGET_MAX_BYTES = 0.95 * 1024 * 1024;
+        let finalFile = f;
+        // Ensure image is strictly < 1MB while preserving up to 1920px resolution
+        if (f.size > TARGET_MAX_BYTES || f.type !== 'image/jpeg') {
+          finalFile = await imageCompression(f, {
+            maxSizeMB: 0.92,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+            fileType: 'image/jpeg',
+            initialQuality: 0.85,
+          });
+          if (finalFile.size >= 1024 * 1024) {
+            finalFile = await imageCompression(finalFile, {
+              maxSizeMB: 0.85,
+              maxWidthOrHeight: 1600,
+              useWebWorker: true,
+            });
+          }
+        }
+        return { file: finalFile, preview: URL.createObjectURL(finalFile), type: 'image' };
       } catch {
         toast.error('Image compression failed');
         return null;
@@ -475,9 +539,9 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
 
           {/* GPS Live Tagging Overlay */}
           {videoReady && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent pt-16 text-white flex gap-3 items-end">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/85 to-transparent pt-16 text-white flex gap-3.5 items-end">
               {/* Live Map Box */}
-              <div className="w-[84px] h-[84px] bg-gray-900 rounded border border-white/40 flex-shrink-0 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+              <div className="w-[96px] h-[96px] bg-gray-900 rounded-lg border-2 border-white/50 flex-shrink-0 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.8)]">
                 {effectiveGpsData && !mapError ? (
                   <img
                     src={`https://static-maps.yandex.ru/1.x/?ll=${effectiveGpsData.longitude},${effectiveGpsData.latitude}&z=15&l=map&size=100,100`}
@@ -493,48 +557,56 @@ export default function CameraFileUploader({ file, files: filesProp, onChange, d
                         <div key={i} className="bg-gray-500 rounded-sm" />
                       ))}
                     </div>
-                    <span className="absolute text-[7px] font-bold text-blue-300 tracking-wider">OFFLINE</span>
+                    <span className="absolute text-[8px] font-bold text-blue-300 tracking-wider">OFFLINE</span>
                   </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900/80">
                     <Scan className="w-5 h-5 text-blue-500 animate-pulse mb-1" />
-                    <span className="text-[8px] font-bold text-gray-400 tracking-wider">LOCATING</span>
+                    <span className="text-[9px] font-bold text-gray-400 tracking-wider">LOCATING</span>
                   </div>
                 )}
                 {effectiveGpsData && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_#3b82f6] border border-white animate-pulse" />
+                    <div className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_8px_#3b82f6] border-2 border-white animate-pulse" />
                   </div>
                 )}
                 {/* Crosshair corners */}
-                <div className="absolute top-0 left-0 w-2 h-2 border-t-[1.5px] border-l-[1.5px] border-blue-400" />
-                <div className="absolute bottom-0 right-0 w-2 h-2 border-b-[1.5px] border-r-[1.5px] border-blue-400" />
+                <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-blue-400" />
+                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b-2 border-r-2 border-blue-400" />
               </div>
 
               <div className="flex-1 min-w-0 flex flex-col justify-end">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded-sm font-black tracking-wider shadow-sm">GEO-TAG</span>
-                  <span className="text-[9px] font-black tracking-widest text-amber-400 uppercase drop-shadow-md">JPHRC Hospital</span>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="bg-blue-600 text-white text-[11px] px-2 py-0.5 rounded font-black tracking-wider shadow-sm">
+                    📍 GEO-TAG
+                  </span>
+                  <span className="text-xs font-black tracking-wider text-amber-400 uppercase drop-shadow-md">
+                    JPHRC Hospital
+                  </span>
                   {addressCached && (
-                    <span className="text-[7px] font-bold text-orange-300 bg-orange-900/40 px-1 rounded">CACHED</span>
+                    <span className="text-[10px] font-bold text-orange-200 bg-orange-900/60 px-1.5 py-0.5 rounded border border-orange-500/30">
+                      CACHED
+                    </span>
                   )}
                   {!navigator.onLine && (
-                    <span className="text-[7px] font-bold text-red-300 bg-red-900/40 px-1 rounded">OFFLINE</span>
+                    <span className="text-[10px] font-bold text-red-200 bg-red-900/60 px-1.5 py-0.5 rounded border border-red-500/30">
+                      OFFLINE
+                    </span>
                   )}
                 </div>
-                <div className="font-black text-[15px] truncate drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-white">
+                <div className="font-black text-base sm:text-lg truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-white">
                   JPHRC, Dayanand Nagar 🇮🇳
                 </div>
-                <div className="text-[10px] text-white/80 line-clamp-1 leading-snug drop-shadow-md font-medium">
+                <div className="text-xs sm:text-sm text-white/90 line-clamp-1 leading-snug drop-shadow-md font-medium">
                   Dandiapali, Rourkela, Odisha 769004
                 </div>
 
-                <div className="flex flex-col mt-1.5 bg-black/50 p-1.5 px-2 rounded border border-white/10 backdrop-blur-md w-fit">
-                  <div className="flex gap-3 text-[10px] font-mono font-bold text-blue-300 tracking-tight">
-                    <span>LAT {effectiveGpsData ? effectiveGpsData.latitude.toFixed(6) : '--.------'}°</span>
-                    <span>LNG {effectiveGpsData ? effectiveGpsData.longitude.toFixed(6) : '--.------'}°</span>
+                <div className="flex flex-col mt-2 bg-black/70 p-2 px-2.5 rounded-lg border border-white/20 backdrop-blur-md w-fit shadow-lg">
+                  <div className="flex gap-4 text-xs sm:text-sm font-mono font-bold text-amber-300 tracking-tight">
+                    <span>LAT: {effectiveGpsData ? effectiveGpsData.latitude.toFixed(6) : '--.------'}°</span>
+                    <span>LNG: {effectiveGpsData ? effectiveGpsData.longitude.toFixed(6) : '--.------'}°</span>
                   </div>
-                  <div className="text-[9px] font-bold text-gray-300 mt-0.5 uppercase tracking-wider">
+                  <div className="text-[11px] sm:text-xs font-bold text-gray-300 mt-1 uppercase tracking-wider font-mono">
                     {liveTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • {liveTime.toLocaleTimeString('en-US', { hour12: false })}
                   </div>
                 </div>
