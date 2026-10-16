@@ -28,7 +28,8 @@
   "scripts": {
     "dev": "set PORT=3000 && react-scripts start",
     "start": "set PORT=3000 && react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "deploy": "react-scripts build && \\cp -rf build/* /home/jpdms/public_html/"
   },
   "browserslist": {
     "production": [
